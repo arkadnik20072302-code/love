@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f0e9">
+  <meta name="description" content="Только наши фотографии и воспоминания.">
+  <title>Наши воспоминания — Наше потом</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./memories-app.js"></script>
+</head>
+<body class="memories-page">
+  <div class="page-shell memories-shell">
+    <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="Вернуться на главную">
+        <span class="brand-mark">н<span>·</span>н</span>
+        <span class="brand-copy"><strong>НАШЕ ПОТОМ</strong><small>НАША ИСТОРИЯ</small></span>
+      </a>
+      <div class="topbar-actions">
+        <a class="memories-back-link" href="./index.html"><span aria-hidden="true">←</span> К нашим планам</a>
+        <button class="settings-button logout-button" id="logout" type="button" hidden>Выйти</button>
+      </div>
+    </header>
+
+    <main class="memories-main">
+      <section class="memories-cover" aria-labelledby="memories-cover-title">
+        <div class="memories-cover-copy">
+          <div class="eyebrow"><span class="eyebrow-dot"></span> ТОЛЬКО НАША ИСТОРИЯ</div>
+          <h1 class="memories-cover-title" id="memories-cover-title">Давай вернёмся<br>в наши <em>моменты.</em></h1>
+          <p>Здесь каждый снимок — маленькая дверь обратно в тот день. Оставим их все при себе.</p>
+          <a class="memories-cover-link" href="#album">Перейти к фотографиям <span aria-hidden="true">↓</span></a>
+        </div>
+        <div class="memories-cover-art" aria-label="Коллаж ваших общих воспоминаний">
+          <div class="cover-orbit cover-orbit-one"></div>
+          <div class="cover-orbit cover-orbit-two"></div>
+          <div class="cover-spark cover-spark-one">✳</div>
+          <div class="cover-spark cover-spark-two">✦</div>
+          <div class="memories-cover-collage" id="memories-cover-collage">
+            <div class="cover-empty-card">
+              <span>А + Д</span>
+              <strong>И это только начало</strong>
+              <small>ВАША ИСТОРИЯ · ГЛАВА 01</small>
+            </div>
+          </div>
+          <span class="cover-art-caption">МАЛЕНЬКИЕ МОМЕНТЫ · БОЛЬШАЯ ИСТОРИЯ</span>
+        </div>
+      </section>
+
+      <section class="memories-section" id="album">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> МОМЕНТЫ, К КОТОРЫМ ХОЧЕТСЯ ВЕРНУТЬСЯ</div>
+            <h2>Наши воспоминания <span class="heading-heart">♡</span></h2>
+          </div>
+          <button class="add-button" id="memory-add-open" type="button"><span>＋</span> Добавить фото</button>
+        </div>
+        <p class="memories-intro">Новые моменты — первыми. Нажмите на фото, чтобы вернуться в тот день и записать свои мысли.</p>
+        <div class="memory-grid" id="memory-grid" aria-live="polite">
+          <div class="empty-state">Здесь будут ваши общие моменты ✿</div>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>НАШЕ ПОТОМ · СОБИРАЕМ ЖИЗНЬ ПО ЖЕЛАНИЯМ</span><span>А + Д</span></footer>
+  </div>
+
+  <dialog class="modal memory-dialog" id="memory-dialog">
+    <div class="memory-viewer">
+      <button class="modal-close" type="button" data-close="memory-dialog" aria-label="Закрыть">×</button>
+      <img class="memory-viewer-photo" id="memory-viewer-photo" alt="Фотография из воспоминания">
+      <div class="memory-viewer-content">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> ВАШ МОМЕНТ</div>
+        <label for="memory-date">Дата воспоминания</label>
+        <input id="memory-date" type="date" required>
+        <label for="thought-her">Что ты думала в тот момент?</label>
+        <textarea id="thought-her" maxlength="2000" rows="3" placeholder="Запиши свою мысль…"></textarea>
+        <label for="thought-him">А что ты думал в тот момент?</label>
+        <textarea id="thought-him" maxlength="2000" rows="3" placeholder="Запиши свою мысль…"></textarea>
+        <div class="form-error" id="memory-error" role="alert"></div>
+        <button class="add-button modal-submit" id="memory-save" type="button">Сохранить воспоминание</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="modal memories-upload-dialog" id="memories-upload-dialog">
+    <form class="modal-card memories-upload-card" id="memories-upload-form">
+      <button class="modal-close" type="button" data-close="memories-upload-dialog" aria-label="Закрыть">×</button>
+      <div class="eyebrow"><span class="eyebrow-dot"></span> ВАШИ ОБЩИЕ МОМЕНТЫ</div>
+      <h2>Добавить фотографии</h2>
+      <p class="modal-description">Можно выбрать сразу несколько фото или целую папку. Для каждого снимка укажи дату — тогда альбом отсортируется правильно.</p>
+      <div class="memory-file-choices">
+        <div class="memory-file-choice">
+          <input class="memory-file-input" id="memory-files" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <label class="memory-folder-picker" for="memory-files"><span aria-hidden="true">▧</span> Выбрать отдельные фото</label>
+        </div>
+        <div class="memory-file-choice">
+          <input class="memory-file-input" id="memory-folder" type="file" accept="image/jpeg,image/png,image/webp" multiple webkitdirectory directory>
+          <label class="memory-folder-picker memory-folder-button" for="memory-folder"><span aria-hidden="true">▱</span> Выбрать папку</label>
+        </div>
+      </div>
+      <div class="memory-upload-list" id="memory-upload-list"></div>
+      <div class="form-error" id="memory-upload-error" role="alert"></div>
+      <button class="add-button modal-submit" id="memory-upload-submit" type="submit" disabled>Сохранить фотографии</button>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

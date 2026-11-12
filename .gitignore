@@ -3,6 +3,7 @@ scripts/wishlist_credentials.ps1
 .env.*
 data/*.sqlite3
 data/*.sqlite3-*
+dist/
 scripts/photos/
 static/photo1.jpg
 __pycache__/

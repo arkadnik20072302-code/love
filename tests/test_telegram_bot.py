@@ -597,12 +597,31 @@ class TelegramBotTests(unittest.TestCase):
                     client.open(f"{base_url}/api/state", timeout=3)
                 self.assertEqual(response.exception.code, 401)
 
+                with self.assertRaises(urllib.error.HTTPError) as response:
+                   client.open(f"{base_url}/api/memories", timeout=3)
+                self.assertEqual(response.exception.code, 401)
+
                 protected_writes = [
                     urllib.request.Request(
                         f"{base_url}/api/wishes",
                         data=json.dumps({"title": "test"}).encode(),
                         headers={"Content-Type": "application/json"},
                         method="POST",
+                    ),
+                    urllib.request.Request(
+                        f"{base_url}/api/memories",
+                        data=json.dumps({
+                            "memory_date": "2025-01-01",
+                            "photo": "data:image/jpeg;base64,dGVzdA==",
+                        }).encode(),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    urllib.request.Request(
+                        f"{base_url}/api/memories/{'a' * 32}",
+                        data=json.dumps({"thought_her": "private"}).encode(),
+                        headers={"Content-Type": "application/json"},
+                        method="PUT",
                     ),
                     urllib.request.Request(
                         f"{base_url}/api/settings",
@@ -649,6 +668,22 @@ class TelegramBotTests(unittest.TestCase):
                 with client.open(request, timeout=3) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("wishes", json.loads(response.read()))
+
+                request = urllib.request.Request(
+                    f"{base_url}/memories.html",
+                    headers={"Cookie": cookie},
+                )
+                with client.open(request) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn(b"memories-cover", response.read())
+
+                request = urllib.request.Request(
+                    f"{base_url}/memory-gallery.js",
+                    headers={"Cookie": cookie},
+                )
+                with client.open(request) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn(b"initMemoryGallery", response.read())
 
                 logout_request = urllib.request.Request(
                     f"{base_url}/auth/logout",

@@ -224,6 +224,69 @@ def supabase_request(method, resource, payload=None, prefer=None):
     return result
 
 
+def supabase_storage_request(method, resource, body=None, content_type=None):
+    config = supabase_config()
+    if config is None:
+        raise SupabaseError("Supabase не настроен.")
+    project_url, service_key = config
+    headers = {
+        "apikey": service_key,
+        "Accept": "application/json",
+    }
+    if not service_key.startswith(("sb_secret_", "sb_publishable_")):
+        headers["Authorization"] = f"Bearer {service_key}"
+    if content_type:
+        headers["Content-Type"] = content_type
+    payload = body
+    if isinstance(body, dict):
+        headers["Content-Type"] = "application/json"
+        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        f"{project_url}/storage/v1/{resource}",
+        data=payload,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            response_body = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(2048).decode("utf-8", "replace")
+        if service_key:
+            detail = detail.replace(service_key, "[redacted]")
+        raise SupabaseError(
+            f"Supabase Storage вернул HTTP {exc.code}: {detail[:300] or exc.reason}"
+        ) from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise SupabaseError(f"Не удалось подключиться к Supabase Storage: {exc}") from exc
+    if not response_body:
+        return {}
+    try:
+        result = json.loads(response_body)
+    except json.JSONDecodeError as exc:
+        raise SupabaseError("Supabase Storage вернул некорректный JSON.") from exc
+    if not isinstance(result, dict):
+        raise SupabaseError("Supabase Storage вернул неожиданный формат данных.")
+    return result
+
+
+def supabase_memory_photo_url(photo_path):
+    result = supabase_storage_request(
+        "POST",
+        f"object/sign/memories/{urllib.parse.quote(photo_path, safe='/')}",
+        {"expiresIn": 3600},
+    )
+    signed_url = result.get("signedURL")
+    if not isinstance(signed_url, str) or not signed_url:
+        raise SupabaseError("Supabase Storage не вернул ссылку на фотографию.")
+    project_url, _service_key = supabase_config()
+    if signed_url.startswith("https://"):
+        return signed_url
+    if signed_url.startswith("/storage/v1/"):
+        return f"{project_url}{signed_url}"
+    return f"{project_url}/storage/v1{signed_url}"
+
+
 def using_supabase():
     return supabase_config() is not None
 
@@ -273,6 +336,14 @@ def initialize_db():
                 created_by TEXT NOT NULL,
                 sent INTEGER NOT NULL DEFAULT 0,
                 sent_to TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                memory_date TEXT NOT NULL,
+                image_data TEXT NOT NULL,
+                thought_her TEXT NOT NULL DEFAULT '',
+                thought_him TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
             );
             INSERT OR IGNORE INTO settings (id) VALUES (1);
             """
@@ -338,6 +409,164 @@ def validate_photo(value):
     if len(image_bytes) > MAX_PHOTO_BYTES:
         raise ValueError("Фотография должна быть меньше 3 МБ.")
     return value
+
+
+def validate_memory_thought(value, field_name):
+    if not isinstance(value, str) or len(value) > 2000:
+        raise ValueError(f"{field_name} должен быть не длиннее 2000 символов.")
+    return value.strip()
+
+
+def get_memories():
+    if using_supabase():
+        rows = supabase_request(
+            "GET",
+            "memories?select=id,memory_date,photo_path,thought_her,thought_him,created_at"
+            "&order=memory_date.desc,created_at.desc",
+        )
+        return [
+            {
+                **row,
+                "photo": supabase_memory_photo_url(row["photo_path"]),
+            }
+            for row in rows
+        ]
+    with DB_LOCK, database() as db:
+        rows = db.execute(
+            "SELECT id, memory_date, image_data, thought_her, thought_him, created_at "
+            "FROM memories ORDER BY memory_date DESC, created_at DESC"
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "memory_date": row["memory_date"],
+            "photo": row["image_data"],
+            "thought_her": row["thought_her"],
+            "thought_him": row["thought_him"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def create_memory(memory_date, photo):
+    memory_date = parse_date(memory_date, "Дата воспоминания")
+    if not memory_date:
+        raise ValueError("Укажите дату воспоминания.")
+    photo = validate_photo(photo)
+    if not photo:
+        raise ValueError("Выберите фотографию.")
+    memory_id = uuid.uuid4().hex
+    created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    if using_supabase():
+        match = PHOTO_PATTERN.fullmatch(photo)
+        mime_type = match.group(1)
+        extension = {"jpeg": "jpg", "png": "png", "webp": "webp"}[mime_type]
+        photo_path = f"{memory_id}.{extension}"
+        image_bytes = base64.b64decode(match.group(2), validate=True)
+        supabase_storage_request(
+            "POST",
+            f"object/memories/{photo_path}",
+            image_bytes,
+            f"image/{mime_type}",
+        )
+        try:
+            rows = supabase_request(
+                "POST",
+                "memories",
+                {
+                    "id": memory_id,
+                    "memory_date": memory_date,
+                    "photo_path": photo_path,
+                    "thought_her": "",
+                    "thought_him": "",
+                },
+                prefer="return=representation",
+            )
+        except SupabaseError:
+            try:
+                supabase_storage_request(
+                    "DELETE",
+                    "object/memories",
+                    {"prefixes": [photo_path]},
+                )
+            except SupabaseError as cleanup_error:
+                print(f"Не удалось удалить несвязанную фотографию из Storage: {cleanup_error}")
+            raise
+        if not rows:
+            raise SupabaseError("Supabase не подтвердил сохранение воспоминания.")
+        return {
+            **rows[0],
+            "photo": supabase_memory_photo_url(photo_path),
+        }
+
+    with DB_LOCK, database() as db:
+        db.execute(
+            "INSERT INTO memories "
+            "(id, memory_date, image_data, thought_her, thought_him, created_at) "
+            "VALUES (?, ?, ?, '', '', ?)",
+            (memory_id, memory_date, photo, created_at),
+        )
+    return {
+        "id": memory_id,
+        "memory_date": memory_date,
+        "photo": photo,
+        "thought_her": "",
+        "thought_him": "",
+        "created_at": created_at,
+    }
+
+
+def update_memory(memory_id, payload):
+    changes = {}
+    if "memory_date" in payload:
+        memory_date = parse_date(payload["memory_date"], "Дата воспоминания")
+        if not memory_date:
+            raise ValueError("Укажите дату воспоминания.")
+        changes["memory_date"] = memory_date
+    for key, label in (
+        ("thought_her", "Мысль"),
+        ("thought_him", "Мысль"),
+    ):
+        if key in payload:
+            changes[key] = validate_memory_thought(payload[key], label)
+    if not changes:
+        raise ValueError("Нет изменений для сохранения.")
+
+    if using_supabase():
+        rows = supabase_request(
+            "PATCH",
+            f"memories?id=eq.{memory_id}",
+            changes,
+            prefer="return=representation",
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        row["photo"] = supabase_memory_photo_url(row["photo_path"])
+        return row
+
+    columns = ", ".join(f"{key} = ?" for key in changes)
+    with DB_LOCK, database() as db:
+        result = db.execute(
+            f"UPDATE memories SET {columns} WHERE id = ?",
+            [*changes.values(), memory_id],
+        )
+        if result.rowcount == 0:
+            return None
+        row = db.execute(
+            "SELECT id, memory_date, image_data, thought_her, thought_him, created_at "
+            "FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+    return {
+        "id": row["id"],
+        "memory_date": row["memory_date"],
+        "photo": row["image_data"],
+        "thought_her": row["thought_her"],
+        "thought_him": row["thought_him"],
+        "created_at": row["created_at"],
+    }
 
 
 def get_state():
@@ -950,10 +1179,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         if os.environ.get("RENDER") or self.headers.get("X-Forwarded-Proto", "").lower() == "https":
             self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        image_sources = "'self' data:"
+        project_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+        if project_url:
+            parsed_project_url = urllib.parse.urlparse(project_url)
+            if parsed_project_url.scheme == "https" and parsed_project_url.netloc:
+                image_sources += f" https://{parsed_project_url.netloc}"
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+            f"img-src {image_sources}; connect-src 'self'; object-src 'none'; "
             "base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()
@@ -1105,6 +1340,15 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"Не удалось прочитать список идей: {exc}")
                 self.send_json(502, {"error": str(exc)})
             return
+        if path == "/api/memories":
+            if not self.require_auth():
+                return
+            try:
+                self.send_json(200, {"memories": get_memories()})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось загрузить воспоминания: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         if path == "/health":
             self.send_json(200, {
                 "ok": True,
@@ -1117,7 +1361,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         static_files = {
             "/": ("index.html", "text/html; charset=utf-8"),
+            "/index.html": ("index.html", "text/html; charset=utf-8"),
+            "/memories.html": ("memories.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            "/memories-app.js": ("memories-app.js", "text/javascript; charset=utf-8"),
+            "/memory-gallery.js": ("memory-gallery.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
             "/photo1.jpg": ("photo1.jpg", "image/jpeg"),
         }
@@ -1148,23 +1396,42 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.require_auth():
             return
-        if path != "/api/wishes":
+        if path not in ("/api/wishes", "/api/memories"):
             self.send_json(404, {"error": "Страница не найдена."})
             return
         try:
             payload = self.read_json()
+            if path == "/api/memories":
+                memory = create_memory(payload.get("memory_date"), payload.get("photo"))
+                self.send_json(201, {"memory": memory})
+                return
             wish = create_wish(payload.get("title"), payload.get("category", "Разное"))
             self.send_json(201, {"wish": wish})
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             self.send_json(400, {"error": str(exc) or "Некорректный JSON."})
         except (sqlite3.Error, SupabaseError) as exc:
-            print(f"Не удалось сохранить идею: {exc}")
+            print(f"Не удалось сохранить запись: {exc}")
             self.send_json(502, {"error": str(exc)})
 
     def do_PUT(self):
         if not self.require_auth():
             return
         path = urllib.parse.urlparse(self.path).path
+        memory_match = re.fullmatch(r"/api/memories/([0-9a-f]{32})", path)
+        if memory_match:
+            try:
+                payload = self.read_json()
+                memory = update_memory(memory_match.group(1), payload)
+                if memory is None:
+                    self.send_json(404, {"error": "Воспоминание не найдено."})
+                    return
+                self.send_json(200, {"memory": memory})
+            except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self.send_json(400, {"error": str(exc) or "Некорректный запрос."})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось обновить воспоминание: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         if path == "/api/settings":
             try:
                 payload = self.read_json()

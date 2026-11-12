@@ -36,9 +36,19 @@ create table if not exists public.reminders (
   sent_to text not null default ''
 );
 
+create table if not exists public.memories (
+  id text primary key,
+  memory_date date not null,
+  photo_path text not null,
+  thought_her text not null default '' check (char_length(thought_her) <= 2000),
+  thought_him text not null default '' check (char_length(thought_him) <= 2000),
+  created_at timestamptz not null default now()
+);
+
 alter table public.settings enable row level security;
 alter table public.wishes enable row level security;
 alter table public.reminders enable row level security;
+alter table public.memories enable row level security;
 
-revoke all on public.settings, public.wishes, public.reminders from anon, authenticated;
-grant all on public.settings, public.wishes, public.reminders to service_role;
+revoke all on public.settings, public.wishes, public.reminders, public.memories from anon, authenticated;
+grant all on public.settings, public.wishes, public.reminders, public.memories to service_role;
