@@ -1,0 +1,11 @@
+scripts/wishlist_credentials.ps1
+.env
+.env.*
+data/*.sqlite3
+data/*.sqlite3-*
+scripts/photos/
+static/photo1.jpg
+__pycache__/
+**/__pycache__/
+*.pyc
+supabase/.temp/
