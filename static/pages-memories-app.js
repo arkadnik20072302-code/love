@@ -1,4 +1,4 @@
-import { currentUser, isWishlistMember, listMemories, signOut, updateRow, uploadMemory } from "./pages-client.js";
+import { currentUser, isWishlistMember, listMemories, signOut, updateRow, uploadMemory } from "./pages-client.js?v=session-redirect";
 import { initMemoryGallery } from "./memory-gallery.js";
 
 const $ = selector => document.querySelector(selector);

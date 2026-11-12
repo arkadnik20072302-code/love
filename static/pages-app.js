@@ -6,7 +6,7 @@ import {
   selectRows,
   signOut,
   updateRow,
-} from "./pages-client.js";
+} from "./pages-client.js?v=session-redirect";
 
 const state = {
   wishes: [],
