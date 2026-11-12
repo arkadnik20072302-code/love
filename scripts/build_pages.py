@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "static"
 OUTPUT_DIR = ROOT / "dist"
-EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js", "photo1.jpg"}
+EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js"}
 
 
 def build_pages(

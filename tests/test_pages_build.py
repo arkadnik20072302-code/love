@@ -33,7 +33,7 @@ class PagesBuildTests(unittest.TestCase):
         (self.source / "app.js").write_text("local backend client", encoding="utf-8")
         (self.source / "login.js").write_text("local login client", encoding="utf-8")
         (self.source / "memories-app.js").write_text("local memories client", encoding="utf-8")
-        (self.source / "photo1.jpg").write_bytes(b"private photo fixture")
+        (self.source / "photo1.jpg").write_bytes(b"homepage photo fixture")
         (self.source / "style.css").write_text("body {}", encoding="utf-8")
         (self.source / "pages-app.js").write_text("pages client", encoding="utf-8")
         (self.source / "pages-login.js").write_text("pages login", encoding="utf-8")
@@ -43,7 +43,7 @@ class PagesBuildTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_build_uses_relative_pages_assets_and_excludes_private_files(self):
+    def test_build_uses_relative_pages_assets_and_includes_home_photo(self):
         build_pages(
             self.source,
             self.output,
@@ -62,7 +62,10 @@ class PagesBuildTests(unittest.TestCase):
         self.assertFalse((self.output / "app.js").exists())
         self.assertFalse((self.output / "login.js").exists())
         self.assertFalse((self.output / "memories-app.js").exists())
-        self.assertFalse((self.output / "photo1.jpg").exists())
+        self.assertEqual(
+            (self.output / "photo1.jpg").read_bytes(),
+            b"homepage photo fixture",
+        )
         self.assertIn('"publishableKey":"sb_publishable_example"', (self.output / "pages-config.js").read_text(encoding="utf-8"))
 
     def test_build_rejects_secret_supabase_key(self):
