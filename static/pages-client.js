@@ -84,7 +84,7 @@ export async function deleteRow(table, id) {
 export async function listMemories() {
   const rows = await selectRows(
     "memories",
-    "id,memory_date,photo_path,thought_her,thought_him,created_at",
+    "id,memory_date,photo_path,thought_her,thought_him,story_title,story_text,created_at",
     { order: "memory_date.desc,created_at.desc" },
   );
   return Promise.all(rows.map(async memory => {
@@ -96,8 +96,19 @@ export async function listMemories() {
   }));
 }
 
-export async function uploadMemory(memoryDate, file) {
+export async function listMemoryStories() {
+  return selectRows(
+    "memories",
+    "id,memory_date,story_title,story_text",
+    { order: "memory_date.desc,created_at.desc" },
+  ).then(rows => rows.filter(memory => memory.story_title || memory.story_text));
+}
+
+export async function uploadMemory(memoryDate, file, storyTitle = "", storyText = "") {
   if (!memoryDate) throw new Error("Укажите дату воспоминания.");
+  if (storyTitle.length > 120 || storyText.length > 8000) {
+    throw new Error("Название истории ограничено 120, а текст — 8000 символами.");
+  }
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
     throw new Error("Поддерживаются фотографии JPEG, PNG и WebP.");
   }
@@ -115,6 +126,8 @@ export async function uploadMemory(memoryDate, file) {
     id,
     memory_date: memoryDate,
     photo_path: photoPath,
+    story_title: storyTitle.trim(),
+    story_text: storyText.trim(),
   });
   if (insertError) {
     const { error: cleanupError } = await supabase.storage.from("memories").remove([photoPath]);
@@ -122,5 +135,18 @@ export async function uploadMemory(memoryDate, file) {
       throw new Error(`${insertError.message} Файл не удалось автоматически очистить: ${cleanupError.message}`);
     }
     throw insertError;
+  }
+}
+
+export async function deleteMemory(id) {
+  const rows = await selectRows("memories", "id,photo_path", { id: `eq.${id}` });
+  if (!rows.length) throw new Error("Воспоминание не найдено.");
+  const { error: rowError } = await supabase.from("memories").delete().eq("id", id);
+  if (rowError) throw rowError;
+  const { error: photoError } = await supabase.storage
+    .from("memories")
+    .remove([rows[0].photo_path]);
+  if (photoError) {
+    throw new Error(`Воспоминание удалено, но фото не удалось очистить из хранилища: ${photoError.message}`);
   }
 }

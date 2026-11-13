@@ -1,4 +1,4 @@
-import { currentUser, isWishlistMember, listMemories, signOut, updateRow, uploadMemory } from "./pages-client.js?v=session-redirect";
+import { currentUser, deleteMemory, isWishlistMember, listMemories, signOut, updateRow, uploadMemory } from "./pages-client.js?v=session-redirect";
 import { initMemoryGallery } from "./memory-gallery.js";
 
 const $ = selector => document.querySelector(selector);
@@ -26,6 +26,7 @@ async function start() {
     listMemories,
     uploadMemory,
     updateMemory: (id, changes) => updateRow("memories", id, changes),
+    deleteMemory,
   });
 }
 

@@ -16,6 +16,7 @@ class PagesBuildTests(unittest.TestCase):
         self.source.mkdir()
         (self.source / "index.html").write_text(
             '<link rel="stylesheet" href="/style.css">'
+            '<script src="/theme.js" defer></script>'
             '<script src="/app.js" defer></script>'
             '<img src="/photo1.jpg">',
             encoding="utf-8",
@@ -30,15 +31,23 @@ class PagesBuildTests(unittest.TestCase):
             '<script type="module" src="./memories-app.js"></script>',
             encoding="utf-8",
         )
+        (self.source / "stories.html").write_text(
+            '<link rel="stylesheet" href="./style.css">'
+            '<script type="module" src="./stories-app.js"></script>',
+            encoding="utf-8",
+        )
         (self.source / "app.js").write_text("local backend client", encoding="utf-8")
         (self.source / "login.js").write_text("local login client", encoding="utf-8")
         (self.source / "memories-app.js").write_text("local memories client", encoding="utf-8")
+        (self.source / "stories-app.js").write_text("local stories client", encoding="utf-8")
         (self.source / "photo1.jpg").write_bytes(b"homepage photo fixture")
         (self.source / "style.css").write_text("body {}", encoding="utf-8")
         (self.source / "pages-app.js").write_text("pages client", encoding="utf-8")
         (self.source / "pages-login.js").write_text("pages login", encoding="utf-8")
         (self.source / "pages-memories-app.js").write_text("pages memories", encoding="utf-8")
         (self.source / "memory-gallery.js").write_text("shared gallery", encoding="utf-8")
+        (self.source / "pages-stories-app.js").write_text("pages stories client", encoding="utf-8")
+        (self.source / "theme.js").write_text("theme switch", encoding="utf-8")
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -54,14 +63,19 @@ class PagesBuildTests(unittest.TestCase):
         index = (self.output / "index.html").read_text(encoding="utf-8")
         login = (self.output / "login.html").read_text(encoding="utf-8")
         memories = (self.output / "memories.html").read_text(encoding="utf-8")
+        stories = (self.output / "stories.html").read_text(encoding="utf-8")
         self.assertIn('href="./style.css"', index)
+        self.assertIn('src="./theme.js"', index)
         self.assertIn('src="./pages-app.js"', index)
         self.assertIn('src="./pages-login.js"', login)
         self.assertIn('src="./pages-memories-app.js"', memories)
+        self.assertIn('src="./pages-stories-app.js"', stories)
         self.assertTrue((self.output / "memory-gallery.js").exists())
+        self.assertTrue((self.output / "theme.js").exists())
         self.assertFalse((self.output / "app.js").exists())
         self.assertFalse((self.output / "login.js").exists())
         self.assertFalse((self.output / "memories-app.js").exists())
+        self.assertFalse((self.output / "stories-app.js").exists())
         self.assertEqual(
             (self.output / "photo1.jpg").read_bytes(),
             b"homepage photo fixture",

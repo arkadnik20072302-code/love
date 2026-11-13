@@ -16,6 +16,13 @@ const state = {
   photoId: null,
 };
 const PHOTO_PATTERN = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const ICONS = {
+  undo: '<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-2"></path></svg>',
+  remove: '<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>',
+  arrow: '<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"></path></svg>',
+  check: '<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"></path></svg>',
+  photo: '<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="m21 15-5-5L5 20"></path></svg>',
+};
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const grid = $("#wish-grid");
@@ -89,7 +96,7 @@ function wishCard(wish) {
       <div class="wish-top">
         <span class="category-tag" data-category="${escapeHtml(wish.category)}">${escapeHtml(wish.category)}</span>
         <div class="wish-actions">
-          ${done ? `<button class="wish-action" type="button" data-action="undo" data-id="${wish.id}" aria-label="Вернуть в планы" title="Вернуть в планы">↶</button>` : `<button class="wish-action" type="button" data-action="delete" data-id="${wish.id}" aria-label="Удалить идею" title="Удалить">×</button>`}
+          ${done ? `<button class="wish-action" type="button" data-action="undo" data-id="${wish.id}" aria-label="Вернуть в планы" title="Вернуть в планы">${ICONS.undo}</button>` : `<button class="wish-action" type="button" data-action="delete" data-id="${wish.id}" aria-label="Удалить идею" title="Удалить">${ICONS.remove}</button>`}
         </div>
       </div>
       <h3 class="wish-title">${safeTitle}</h3>
@@ -97,8 +104,8 @@ function wishCard(wish) {
       <div class="wish-bottom">
         <span class="wish-date">${escapeHtml(descriptionDate)}</span>
         ${done
-          ? `<button class="wish-cta" type="button" data-action="photo" data-id="${wish.id}">${safePhoto ? "Поменять фото" : "＋ Фото"}</button>`
-          : `<button class="wish-cta" type="button" data-action="schedule" data-id="${wish.id}">Запланировать ↗</button><button class="wish-cta" type="button" data-action="done" data-id="${wish.id}">Сбылось ✓</button>`}
+          ? `<button class="wish-cta" type="button" data-action="photo" data-id="${wish.id}">${ICONS.photo}${safePhoto ? "Поменять фото" : "Фото"}</button>`
+          : `<button class="wish-cta" type="button" data-action="schedule" data-id="${wish.id}">Запланировать ${ICONS.arrow}</button><button class="wish-cta" type="button" data-action="done" data-id="${wish.id}">Сбылось ${ICONS.check}</button>`}
       </div>
     </article>`;
 }
@@ -117,7 +124,7 @@ function renderWishes() {
   );
   grid.innerHTML = shown.length
     ? shown.map(wishCard).join("")
-    : `<div class="empty-state">${state.filter === "done" ? "Пока ни одно приключение не отмечено как сбывшееся — всё впереди ✿" : "Здесь скоро появится ваша первая идея ✿"}</div>`;
+    : `<div class="empty-state">${state.filter === "done" ? "Пока ни одно приключение не отмечено как сбывшееся — всё впереди." : "Здесь скоро появится ваша первая идея."}</div>`;
 }
 
 async function refresh() {
@@ -253,7 +260,7 @@ $("#schedule-form").addEventListener("submit", async event => {
     });
     await refresh();
     closeDialog($("#schedule-dialog"));
-    showToast("Записала в планы — пусть получится! ✦");
+    showToast("Записала в планы — пусть получится!");
     if ("Notification" in window && Notification.permission === "granted") {
       const plannedDate = plannedFor
         ? `${formatDate(plannedFor)}${plannedTime ? ` в ${plannedTime}` : ""}`

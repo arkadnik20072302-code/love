@@ -343,6 +343,8 @@ def initialize_db():
                 image_data TEXT NOT NULL,
                 thought_her TEXT NOT NULL DEFAULT '',
                 thought_him TEXT NOT NULL DEFAULT '',
+                story_title TEXT NOT NULL DEFAULT '',
+                story_text TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
             INSERT OR IGNORE INTO settings (id) VALUES (1);
@@ -355,6 +357,13 @@ def initialize_db():
             db.execute("ALTER TABLE wishes ADD COLUMN planned_time TEXT NOT NULL DEFAULT ''")
         if "completed_time" not in wish_columns:
             db.execute("ALTER TABLE wishes ADD COLUMN completed_time TEXT NOT NULL DEFAULT ''")
+        memory_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        if "story_title" not in memory_columns:
+            db.execute("ALTER TABLE memories ADD COLUMN story_title TEXT NOT NULL DEFAULT ''")
+        if "story_text" not in memory_columns:
+            db.execute("ALTER TABLE memories ADD COLUMN story_text TEXT NOT NULL DEFAULT ''")
         if db.execute("SELECT COUNT(*) FROM wishes").fetchone()[0] == 0:
             today = datetime.date.today().isoformat()
             starter_wishes = [
@@ -417,11 +426,17 @@ def validate_memory_thought(value, field_name):
     return value.strip()
 
 
+def validate_memory_story(value, field_name, limit):
+    if not isinstance(value, str) or len(value) > limit:
+        raise ValueError(f"{field_name} должен быть не длиннее {limit} символов.")
+    return value.strip()
+
+
 def get_memories():
     if using_supabase():
         rows = supabase_request(
             "GET",
-            "memories?select=id,memory_date,photo_path,thought_her,thought_him,created_at"
+            "memories?select=id,memory_date,photo_path,thought_her,thought_him,story_title,story_text,created_at"
             "&order=memory_date.desc,created_at.desc",
         )
         return [
@@ -433,7 +448,7 @@ def get_memories():
         ]
     with DB_LOCK, database() as db:
         rows = db.execute(
-            "SELECT id, memory_date, image_data, thought_her, thought_him, created_at "
+            "SELECT id, memory_date, image_data, thought_her, thought_him, story_title, story_text, created_at "
             "FROM memories ORDER BY memory_date DESC, created_at DESC"
         ).fetchall()
     return [
@@ -443,19 +458,40 @@ def get_memories():
             "photo": row["image_data"],
             "thought_her": row["thought_her"],
             "thought_him": row["thought_him"],
+            "story_title": row["story_title"],
+            "story_text": row["story_text"],
             "created_at": row["created_at"],
         }
         for row in rows
     ]
 
 
-def create_memory(memory_date, photo):
+def get_memory_stories():
+    if using_supabase():
+        return supabase_request(
+            "GET",
+            "memories?select=id,memory_date,story_title,story_text"
+            "&or=(story_title.neq.,story_text.neq.)"
+            "&order=memory_date.desc,created_at.desc",
+        )
+    with DB_LOCK, database() as db:
+        rows = db.execute(
+            "SELECT id, memory_date, story_title, story_text FROM memories "
+            "WHERE trim(story_title) <> '' OR trim(story_text) <> '' "
+            "ORDER BY memory_date DESC, created_at DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_memory(memory_date, photo, story_title="", story_text=""):
     memory_date = parse_date(memory_date, "Дата воспоминания")
     if not memory_date:
         raise ValueError("Укажите дату воспоминания.")
     photo = validate_photo(photo)
     if not photo:
         raise ValueError("Выберите фотографию.")
+    story_title = validate_memory_story(story_title, "Название истории", 120)
+    story_text = validate_memory_story(story_text, "История", 8000)
     memory_id = uuid.uuid4().hex
     created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     if using_supabase():
@@ -480,6 +516,8 @@ def create_memory(memory_date, photo):
                     "photo_path": photo_path,
                     "thought_her": "",
                     "thought_him": "",
+                    "story_title": story_title,
+                    "story_text": story_text,
                 },
                 prefer="return=representation",
             )
@@ -503,9 +541,9 @@ def create_memory(memory_date, photo):
     with DB_LOCK, database() as db:
         db.execute(
             "INSERT INTO memories "
-            "(id, memory_date, image_data, thought_her, thought_him, created_at) "
-            "VALUES (?, ?, ?, '', '', ?)",
-            (memory_id, memory_date, photo, created_at),
+            "(id, memory_date, image_data, thought_her, thought_him, story_title, story_text, created_at) "
+            "VALUES (?, ?, ?, '', '', ?, ?, ?)",
+            (memory_id, memory_date, photo, story_title, story_text, created_at),
         )
     return {
         "id": memory_id,
@@ -513,6 +551,8 @@ def create_memory(memory_date, photo):
         "photo": photo,
         "thought_her": "",
         "thought_him": "",
+        "story_title": story_title,
+        "story_text": story_text,
         "created_at": created_at,
     }
 
@@ -530,6 +570,14 @@ def update_memory(memory_id, payload):
     ):
         if key in payload:
             changes[key] = validate_memory_thought(payload[key], label)
+    if "story_title" in payload:
+        changes["story_title"] = validate_memory_story(
+            payload["story_title"], "Название истории", 120
+        )
+    if "story_text" in payload:
+        changes["story_text"] = validate_memory_story(
+            payload["story_text"], "История", 8000
+        )
     if not changes:
         raise ValueError("Нет изменений для сохранения.")
 
@@ -555,7 +603,7 @@ def update_memory(memory_id, payload):
         if result.rowcount == 0:
             return None
         row = db.execute(
-            "SELECT id, memory_date, image_data, thought_her, thought_him, created_at "
+            "SELECT id, memory_date, image_data, thought_her, thought_him, story_title, story_text, created_at "
             "FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
@@ -565,8 +613,42 @@ def update_memory(memory_id, payload):
         "photo": row["image_data"],
         "thought_her": row["thought_her"],
         "thought_him": row["thought_him"],
+        "story_title": row["story_title"],
+        "story_text": row["story_text"],
         "created_at": row["created_at"],
     }
+
+
+def delete_memory(memory_id):
+    if using_supabase():
+        existing = supabase_request(
+            "GET",
+            f"memories?select=id,photo_path&id=eq.{memory_id}",
+        )
+        if not existing:
+            return False
+        rows = supabase_request(
+            "DELETE",
+            f"memories?id=eq.{memory_id}",
+            prefer="return=representation",
+        )
+        if not rows:
+            return False
+        try:
+            supabase_storage_request(
+                "DELETE",
+                "object/memories",
+                {"prefixes": [existing[0]["photo_path"]]},
+            )
+        except SupabaseError as exc:
+            raise SupabaseError(
+                f"Воспоминание удалено, но файл не удалось очистить из Storage: {exc}"
+            ) from exc
+        return True
+
+    with DB_LOCK, database() as db:
+        result = db.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        return result.rowcount > 0
 
 
 def get_state():
@@ -1349,6 +1431,15 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"Не удалось загрузить воспоминания: {exc}")
                 self.send_json(502, {"error": str(exc)})
             return
+        if path == "/api/stories":
+            if not self.require_auth():
+                return
+            try:
+                self.send_json(200, {"stories": get_memory_stories()})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось загрузить истории: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         if path == "/health":
             self.send_json(200, {
                 "ok": True,
@@ -1363,9 +1454,13 @@ class Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/memories.html": ("memories.html", "text/html; charset=utf-8"),
+            "/stories.html": ("stories.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/memories-app.js": ("memories-app.js", "text/javascript; charset=utf-8"),
+            "/stories-app.js": ("stories-app.js", "text/javascript; charset=utf-8"),
+            "/pages-stories-app.js": ("pages-stories-app.js", "text/javascript; charset=utf-8"),
             "/memory-gallery.js": ("memory-gallery.js", "text/javascript; charset=utf-8"),
+            "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
             "/photo1.jpg": ("photo1.jpg", "image/jpeg"),
         }
@@ -1402,7 +1497,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = self.read_json()
             if path == "/api/memories":
-                memory = create_memory(payload.get("memory_date"), payload.get("photo"))
+                memory = create_memory(
+                    payload.get("memory_date"),
+                    payload.get("photo"),
+                    payload.get("story_title", ""),
+                    payload.get("story_text", ""),
+                )
                 self.send_json(201, {"memory": memory})
                 return
             wish = create_wish(payload.get("title"), payload.get("category", "Разное"))
@@ -1579,6 +1679,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_auth():
             return
         path = urllib.parse.urlparse(self.path).path
+        memory_match = re.fullmatch(r"/api/memories/([0-9a-f]{32})", path)
+        if memory_match:
+            try:
+                if not delete_memory(memory_match.group(1)):
+                    self.send_json(404, {"error": "Воспоминание не найдено."})
+                    return
+                self.send_json(200, {"ok": True})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось удалить воспоминание: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         match = re.fullmatch(r"/api/wishes/([0-9a-f]{32})", path)
         if not match:
             self.send_json(404, {"error": "Идея не найдена."})

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f0e9">
+  <meta name="description" content="Истории о наших общих моментах.">
+  <title>Наши истории — Наше потом</title>
+  <script src="./theme.js" defer></script>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./stories-app.js"></script>
+</head>
+<body class="stories-page">
+  <div class="page-shell stories-shell">
+    <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="На главную">
+        <span class="brand-mark">н<span>·</span>н</span>
+        <span class="brand-copy"><strong>НАШЕ ПОТОМ</strong><small>НАШИ ИСТОРИИ</small></span>
+      </a>
+      <div class="topbar-actions">
+        <a class="memories-back-link" href="./memories.html" aria-label="К фотографиям">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m7 7-7-7 7-7"></path></svg>
+          <span class="nav-link-label">К фотографиям</span>
+        </a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Включить тёмную тему" title="Тёмная тема" aria-pressed="false">
+          <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.4A8.5 8.5 0 0 1 8.6 3.8 8.5 8.5 0 1 0 20.2 15.4Z"></path></svg>
+          <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"></path></svg>
+        </button>
+        <button class="settings-button logout-button" id="logout" type="button" hidden>Выйти</button>
+      </div>
+    </header>
+
+    <main class="stories-main">
+      <section class="stories-cover">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> КАЖДЫЙ СНИМОК ХРАНИТ СВОЮ ИСТОРИЮ</div>
+        <h1 class="stories-title">Истории наших<br><em>маленьких моментов.</em></h1>
+        <p>Не только где мы были, но и что тогда происходило. Всё, что хочется сохранить.</p>
+        <a class="memories-cover-link" href="./memories.html">
+          Вернуться к фотографиям
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7"></path></svg>
+        </a>
+      </section>
+      <section class="stories-section" aria-labelledby="stories-heading">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> ПО ДАТЕ — ОТ НОВЫХ К СТАРЫМ</div>
+            <h2 id="stories-heading">Наша летопись</h2>
+          </div>
+        </div>
+        <div class="story-list" id="story-list" aria-live="polite">
+          <div class="empty-state">Загружаем ваши истории…</div>
+        </div>
+      </section>
+    </main>
+    <footer><span>НАШЕ ПОТОМ · СОХРАНЯЕМ САМОЕ ВАЖНОЕ</span><span>А + Д</span></footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

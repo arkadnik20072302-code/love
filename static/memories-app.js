@@ -25,11 +25,16 @@ function readAsDataUrl(file) {
   });
 }
 
-async function uploadMemory(memoryDate, file) {
+async function uploadMemory(memoryDate, file, storyTitle, storyText) {
   const photo = await readAsDataUrl(file);
   await api("/api/memories", {
     method: "POST",
-    body: JSON.stringify({ memory_date: memoryDate, photo }),
+    body: JSON.stringify({
+      memory_date: memoryDate,
+      photo,
+      story_title: storyTitle,
+      story_text: storyText,
+    }),
   });
 }
 
@@ -40,6 +45,7 @@ initMemoryGallery({
     method: "PUT",
     body: JSON.stringify(changes),
   }),
+  deleteMemory: id => api(`/api/memories/${id}`, { method: "DELETE" }),
 }).catch(error => console.error("Не удалось загрузить альбом воспоминаний:", error));
 
 fetch("/health")

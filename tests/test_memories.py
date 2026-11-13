@@ -61,28 +61,45 @@ class MemoriesApiTests(unittest.TestCase):
         _, older = self.request("POST", "/api/memories", {
             "memory_date": "2024-01-02",
             "photo": photo,
+            "story_title": "Наша первая прогулка",
+            "story_text": "Долго гуляли и смеялись.",
         })
         _, newer = self.request("POST", "/api/memories", {
             "memory_date": "2025-03-04",
             "photo": photo,
         })
+        _, same_day = self.request("POST", "/api/memories", {
+            "memory_date": "2025-03-04",
+            "photo": photo,
+            "story_title": "Ещё один кадр",
+            "story_text": "Короткая отдельная история.",
+        })
 
         _, result = self.request("GET", "/api/memories")
         self.assertEqual(
             [memory["id"] for memory in result["memories"]],
-            [newer["memory"]["id"], older["memory"]["id"]],
+            [same_day["memory"]["id"], newer["memory"]["id"], older["memory"]["id"]],
         )
+        self.assertEqual(older["memory"]["story_title"], "Наша первая прогулка")
 
         _, updated = self.request("PUT", f"/api/memories/{older['memory']['id']}", {
             "memory_date": "2026-05-06",
             "thought_her": "Я была счастлива",
             "thought_him": "Я тоже",
+            "story_title": "Самый тёплый день",
+            "story_text": "Провели вместе целый день.",
         })
         self.assertEqual(updated["memory"]["thought_her"], "Я была счастлива")
         self.assertEqual(updated["memory"]["thought_him"], "Я тоже")
+        self.assertEqual(updated["memory"]["story_text"], "Провели вместе целый день.")
 
         _, result = self.request("GET", "/api/memories")
         self.assertEqual(result["memories"][0]["id"], older["memory"]["id"])
+        _, stories = self.request("GET", "/api/stories")
+        self.assertEqual(
+            [story["story_title"] for story in stories["stories"]],
+            ["Самый тёплый день", "Ещё один кадр"],
+        )
 
     def test_create_requires_date_and_photo(self):
         with self.assertRaises(urllib.error.HTTPError) as context:
@@ -103,6 +120,27 @@ class MemoriesApiTests(unittest.TestCase):
                 "thought_her": "x" * 2001,
             })
         self.assertEqual(context.exception.code, 400)
+
+    def test_story_fields_are_limited_and_memory_can_be_deleted(self):
+        photo = "data:image/jpeg;base64," + base64.b64encode(b"photo").decode("ascii")
+        _, result = self.request("POST", "/api/memories", {
+            "memory_date": "2024-01-02",
+            "photo": photo,
+            "story_title": "Прогулка",
+            "story_text": "История",
+        })
+        memory_id = result["memory"]["id"]
+        with self.assertRaises(urllib.error.HTTPError) as context:
+            self.request("PUT", f"/api/memories/{memory_id}", {
+                "story_text": "x" * 8001,
+            })
+        self.assertEqual(context.exception.code, 400)
+
+        status, deleted = self.request("DELETE", f"/api/memories/{memory_id}")
+        self.assertEqual(status, 200)
+        self.assertTrue(deleted["ok"])
+        _, memories = self.request("GET", "/api/memories")
+        self.assertEqual(memories["memories"], [])
 
 
 if __name__ == "__main__":

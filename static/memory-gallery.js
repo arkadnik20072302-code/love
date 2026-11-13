@@ -1,5 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({
@@ -7,12 +9,13 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function formatMemoryDate(value) {
+function formatMemoryDate(value, options = {}) {
   if (!value) return "";
   return new Intl.DateTimeFormat("ru-RU", {
     day: "numeric",
     month: "long",
     year: "numeric",
+    ...options,
   }).format(new Date(`${value}T00:00:00`));
 }
 
@@ -28,14 +31,15 @@ function readAsDataUrl(file) {
 function memoryLoadError(error) {
   const detail = String(error.message || error);
   if (detail.includes("Could not find the table 'public.memories' in the schema cache")) {
-    return "В Supabase ещё нет таблицы public.memories. Открой SQL Editor, выполни файл supabase/memories_access.sql и обнови страницу.";
+    return "В Supabase ещё нет таблицы воспоминаний. Выполни файл supabase/memories_access.sql и обнови страницу.";
   }
   return `Не удалось загрузить фотографии: ${detail}`;
 }
 
-export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) {
+export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, deleteMemory }) {
   const memoryGrid = $("#memory-grid");
-  const state = { memories: [], memoryId: null };
+  const monthFilter = $("#memory-month-filter");
+  const state = { memories: [], memoryId: null, month: "all" };
   let toastTimer;
   let uploadFiles = [];
 
@@ -58,37 +62,66 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     else dialog.removeAttribute("open");
   }
 
+  function renderMonthFilter() {
+    const selected = state.month;
+    const months = [...new Set(state.memories.map(memory => memory.memory_date.slice(0, 7)))];
+    monthFilter.innerHTML = `<option value="all">Все месяцы</option>${months.map(month => {
+      const label = formatMemoryDate(`${month}-01`, { day: undefined });
+      return `<option value="${month}">${escapeHtml(label)}</option>`;
+    }).join("")}`;
+    state.month = months.includes(selected) ? selected : "all";
+    monthFilter.value = state.month;
+  }
+
   function renderMemories() {
     const sorted = [...state.memories].sort((a, b) =>
       b.memory_date.localeCompare(a.memory_date) || b.created_at.localeCompare(a.created_at),
     );
-    memoryGrid.innerHTML = sorted.length
-      ? sorted.map(memory => {
-        const thought = memory.thought_her || memory.thought_him || "";
-        return `<button class="memory-card" type="button" data-memory-id="${memory.id}" aria-label="Открыть воспоминание от ${escapeHtml(formatMemoryDate(memory.memory_date))}">
-          <img src="${escapeHtml(memory.photo)}" alt="Фотография от ${escapeHtml(formatMemoryDate(memory.memory_date))}" loading="lazy">
-          <span class="memory-card-copy">
-            <strong class="memory-card-date">${escapeHtml(formatMemoryDate(memory.memory_date))}</strong>
-            ${thought ? `<span class="memory-card-thought">${escapeHtml(thought)}</span>` : ""}
-          </span>
-        </button>`;
+    const filtered = state.month === "all"
+      ? sorted
+      : sorted.filter(memory => memory.memory_date.startsWith(state.month));
+    const byDate = new Map();
+    filtered.forEach(memory => {
+      if (!byDate.has(memory.memory_date)) byDate.set(memory.memory_date, []);
+      byDate.get(memory.memory_date).push(memory);
+    });
+
+    memoryGrid.innerHTML = byDate.size
+      ? [...byDate.entries()].map(([, memories]) => {
+        const total = memories.length;
+        const cards = memories.map((memory, index) => {
+          const center = (total - 1) / 2;
+          const offset = (index - center) * Math.min(20, 92 / Math.max(total, 1));
+          const rotation = (index - center) * Math.min(8, 24 / Math.max(total, 1));
+          const title = memory.story_title || "Открыть фотографию";
+          return `<button class="memory-card" type="button" data-memory-id="${memory.id}" style="--card-offset:${offset}px;--card-rotation:${rotation}deg;--card-order:${index}" aria-label="${escapeHtml(title)}, ${escapeHtml(formatMemoryDate(memory.memory_date))}">
+            <img src="${escapeHtml(memory.photo)}" alt="${escapeHtml(title)}" loading="lazy">
+          </button>`;
+        }).join("");
+        return `<div class="memory-day-stack" role="group" aria-label="Фотографии одного дня">${cards}</div>`;
       }).join("")
-      : `<div class="empty-state">Здесь будут ваши общие моменты ✿</div>`;
+      : `<div class="empty-state">${state.memories.length ? "За этот месяц фотографий нет." : "Здесь будут ваши общие моменты."}</div>`;
 
     const collage = $("#memories-cover-collage");
-    if (collage && sorted.length) {
-      collage.innerHTML = sorted.slice(0, 3).map((memory, index) =>
-        `<figure class="cover-photo-card cover-photo-card-${index}">
-          <img src="${escapeHtml(memory.photo)}" alt="Ваш момент от ${escapeHtml(formatMemoryDate(memory.memory_date))}">
-          <figcaption>${escapeHtml(formatMemoryDate(memory.memory_date))}</figcaption>
-        </figure>`,
-      ).join("");
+    if (collage) {
+      collage.innerHTML = sorted.length
+        ? sorted.slice(0, 3).map((memory, index) =>
+          `<figure class="cover-photo-card cover-photo-card-${index}">
+            <img src="${escapeHtml(memory.photo)}" alt="Фотография из вашего альбома" loading="lazy">
+          </figure>`,
+        ).join("")
+        : `<div class="cover-empty-card">
+          <span>А + Д</span>
+          <strong>И это только начало</strong>
+          <small>ВАША ИСТОРИЯ · ГЛАВА 01</small>
+        </div>`;
     }
   }
 
   function refresh() {
     return listMemories().then(memories => {
       state.memories = memories;
+      renderMonthFilter();
       renderMemories();
     }).catch(error => {
       memoryGrid.innerHTML = `<div class="empty-state">${escapeHtml(memoryLoadError(error))}</div>`;
@@ -100,6 +133,8 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     state.memoryId = memory.id;
     $("#memory-viewer-photo").src = memory.photo;
     $("#memory-date").value = memory.memory_date;
+    $("#memory-story-title").value = memory.story_title || "";
+    $("#memory-story-text").value = memory.story_text || "";
     $("#thought-her").value = memory.thought_her || "";
     $("#thought-him").value = memory.thought_him || "";
     $("#memory-error").textContent = "";
@@ -110,15 +145,31 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     return `${file.name}:${file.size}:${file.lastModified}`;
   }
 
-  function renderUploadFiles(preservedDates = new Map()) {
+  function currentUploadValues() {
+    return new Map($$(".memory-upload-item").map(item => [
+      uploadFileKey(uploadFiles[Number(item.dataset.uploadIndex)]),
+      {
+        date: $("#memory-upload-date", item).value,
+        title: $("#memory-upload-title", item).value,
+        story: $("#memory-upload-story", item).value,
+      },
+    ]));
+  }
+
+  function renderUploadFiles(preservedValues = new Map()) {
     const list = $("#memory-upload-list");
     list.innerHTML = uploadFiles.map((file, index) => {
+      const values = preservedValues.get(uploadFileKey(file)) || {};
       return `<article class="memory-upload-item" data-upload-index="${index}">
         <img data-preview-index="${index}" alt="" loading="lazy">
-        <div>
+        <div class="memory-upload-fields">
           <strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong>
           <label for="memory-upload-date-${index}">Дата этого момента</label>
-          <input id="memory-upload-date-${index}" type="date" value="${escapeHtml(preservedDates.get(uploadFileKey(file)) || "")}" required>
+          <input id="memory-upload-date-${index}" class="memory-upload-date" type="date" value="${escapeHtml(values.date || "")}" required>
+          <label for="memory-upload-title-${index}">Название истории</label>
+          <input id="memory-upload-title-${index}" class="memory-upload-title" type="text" maxlength="120" value="${escapeHtml(values.title || "")}" placeholder="Например, наша поездка">
+          <label for="memory-upload-story-${index}">Что произошло?</label>
+          <textarea id="memory-upload-story-${index}" class="memory-upload-story" maxlength="8000" rows="2" placeholder="Коротко запиши историю этого фото…">${escapeHtml(values.story || "")}</textarea>
         </div>
       </article>`;
     }).join("");
@@ -140,6 +191,11 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     if (memory) openMemory(memory);
   });
 
+  monthFilter.addEventListener("change", () => {
+    state.month = monthFilter.value;
+    renderMemories();
+  });
+
   $("#memory-add-open").addEventListener("click", () => {
     uploadFiles = [];
     $("#memory-files").value = "";
@@ -147,22 +203,20 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     $("#memory-upload-list").replaceChildren();
     $("#memory-upload-error").textContent = "";
     $("#memory-upload-submit").disabled = true;
+    $("#memory-upload-submit").textContent = "Сохранить фотографии";
     openDialog("memories-upload-dialog");
   });
 
   function addSelectedFiles(files) {
-    const preservedDates = new Map(uploadFiles.map((file, index) => [
-      uploadFileKey(file),
-      $(`#memory-upload-date-${index}`)?.value || "",
-    ]));
+    const preservedValues = currentUploadValues();
     const seen = new Set(uploadFiles.map(uploadFileKey));
     let unsupported = 0;
     let oversized = 0;
     let duplicates = 0;
     for (const file of files) {
-      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      if (!IMAGE_TYPES.includes(file.type)) {
         unsupported += 1;
-      } else if (file.size > 3 * 1024 * 1024) {
+      } else if (file.size > MAX_PHOTO_BYTES) {
         oversized += 1;
       } else if (seen.has(uploadFileKey(file))) {
         duplicates += 1;
@@ -176,7 +230,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     if (oversized) messages.push(`${oversized} файлов больше 3 МБ пропущено.`);
     if (duplicates) messages.push(`${duplicates} повторных файлов пропущено.`);
     $("#memory-upload-error").textContent = messages.join(" ");
-    renderUploadFiles(preservedDates);
+    renderUploadFiles(preservedValues);
   }
 
   ["#memory-files", "#memory-folder"].forEach(selector => {
@@ -190,10 +244,15 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
   $("#memories-upload-form").addEventListener("submit", async event => {
     event.preventDefault();
     const items = $$(".memory-upload-item");
-    const missingDate = items.some(item => !$("input", item).value);
+    const values = items.map(item => ({
+      date: $(".memory-upload-date", item).value,
+      title: $(".memory-upload-title", item).value.trim(),
+      story: $(".memory-upload-story", item).value.trim(),
+    }));
+    const missingDate = values.some(item => !item.date);
     if (missingDate) {
       $("#memory-upload-error").textContent = "Укажи дату для каждой фотографии.";
-      items.forEach(item => item.classList.toggle("is-invalid", !$("input", item).value));
+      items.forEach((item, index) => item.classList.toggle("is-invalid", !values[index].date));
       return;
     }
     const submit = $("#memory-upload-submit");
@@ -202,26 +261,26 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     let uploaded = 0;
     const errors = [];
     const failedFiles = [];
-    const failedDates = [];
+    const failedValues = [];
     for (let index = 0; index < uploadFiles.length; index += 1) {
       const file = uploadFiles[index];
-      const memoryDate = $("input", items[index]).value;
       submit.textContent = `Загружаю ${index + 1} из ${uploadFiles.length}…`;
       try {
-        await uploadMemory(memoryDate, file);
+        await uploadMemory(values[index].date, file, values[index].title, values[index].story);
         uploaded += 1;
       } catch (error) {
         errors.push(`${file.name}: ${error.message}`);
         failedFiles.push(file);
-        failedDates.push(memoryDate);
+        failedValues.push(values[index]);
       }
     }
     submit.textContent = "Сохранить фотографии";
+    const failedByFile = new Map(failedFiles.map((file, index) => [
+      uploadFileKey(file),
+      failedValues[index],
+    ]));
     uploadFiles = failedFiles;
-    renderUploadFiles();
-    uploadFiles.forEach((_file, index) => {
-      $(`#memory-upload-date-${index}`).value = failedDates[index];
-    });
+    renderUploadFiles(failedByFile);
     try {
       await refresh();
     } catch (error) {
@@ -234,7 +293,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
         `${uploaded} фото сохранено. Остались только неудачные загрузки: ${errors.join("; ")}`;
     } else {
       closeDialog($("#memories-upload-dialog"));
-      showToast(`Добавлено фотографий: ${uploaded} ♡`);
+      showToast(`Добавлено фотографий: ${uploaded}`);
     }
   });
 
@@ -251,16 +310,36 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory }) 
     try {
       await updateMemory(memory.id, {
         memory_date: memoryDate,
+        story_title: $("#memory-story-title").value.trim(),
+        story_text: $("#memory-story-text").value.trim(),
         thought_her: $("#thought-her").value.trim(),
         thought_him: $("#thought-him").value.trim(),
       });
       await refresh();
       closeDialog($("#memory-dialog"));
-      showToast("Воспоминание сохранено ♡");
+      showToast("История и мысли сохранены.");
     } catch (error) {
       $("#memory-error").textContent = error.message;
     } finally {
       saveButton.disabled = false;
+    }
+  });
+
+  $("#memory-delete").addEventListener("click", async () => {
+    const memory = state.memories.find(item => item.id === state.memoryId);
+    if (!memory || !window.confirm("Удалить это фото вместе с его историей и мыслями?")) return;
+    const deleteButton = $("#memory-delete");
+    deleteButton.disabled = true;
+    try {
+      await deleteMemory(memory.id);
+      await refresh();
+      closeDialog($("#memory-dialog"));
+      showToast("Фото и его история удалены.");
+    } catch (error) {
+      $("#memory-error").textContent = error.message;
+      await refresh();
+    } finally {
+      deleteButton.disabled = false;
     }
   });
 

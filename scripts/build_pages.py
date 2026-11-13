@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "static"
 OUTPUT_DIR = ROOT / "dist"
-EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js"}
+EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js", "stories-app.js"}
 
 
 def build_pages(
@@ -58,10 +58,15 @@ def build_pages(
             '<script type="module" src="./memories-app.js"></script>',
             '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-memories-app.js"></script>',
         ),
+        "stories.html": (
+            '<script type="module" src="./stories-app.js"></script>',
+            '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-stories-app.js"></script>',
+        ),
     }
     asset_replacements = {
         'href="/style.css"': 'href="./style.css"',
         'href="/login.css"': 'href="./login.css"',
+        'src="/theme.js"': 'src="./theme.js"',
         'src="/photo1.jpg"': 'src="./photo1.jpg"',
     }
     for html_name, (old_script, new_script) in page_scripts.items():
