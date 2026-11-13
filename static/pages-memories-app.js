@@ -1,4 +1,4 @@
-import { currentUser, deleteMemory, isWishlistMember, listMemories, signOut, updateRow, uploadMemory } from "./pages-client.js?v=session-redirect";
+import { currentUser, deleteMemory, isWishlistMember, listMemories, memorySchemaHint, signOut, updateRow, uploadMemory } from "./pages-client.js?v=memory-stories";
 import { initMemoryGallery } from "./memory-gallery.js";
 
 const $ = selector => document.querySelector(selector);
@@ -38,8 +38,6 @@ $("#logout").addEventListener("click", async () => {
 start().catch(error => {
   const grid = $("#memory-grid");
   const detail = String(error.message || error);
-  const message = detail.includes("Could not find the table 'public.memories' in the schema cache")
-    ? "Таблица альбома ещё не создана в Supabase. Выполни файл supabase/memories_access.sql в SQL Editor и обнови страницу."
-    : `Не удалось открыть альбом: ${detail}`;
+  const message = memorySchemaHint(error) || `Не удалось открыть альбом: ${detail}`;
   grid.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
 });

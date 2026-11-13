@@ -670,14 +670,7 @@ html[data-theme="dark"] ::selection { background: #744f9b; color: #fff; }
   .memories-cover-title { margin: 22px 0 15px; font-size: clamp(42px, 11vw, 58px); letter-spacing: -2px; }
   .memories-cover-copy > p { font-size: 11px; }
   .memories-cover-link { margin-top: 20px; }
-  .memories-cover-art { width: 100%; height: 300px; margin-top: 3px; align-self: center; }
-  .cover-orbit { width: 300px; height: 300px; }
-  .cover-orbit-two { width: 360px; height: 360px; }
-  .memories-cover-collage { inset: 14px 0 20px; }
-  .cover-empty-card { width: 55%; }
-  .cover-photo-card-0 { left: 16%; }
-  .cover-photo-card-1 { right: 9%; }
-  .cover-photo-card-2 { left: 7%; }
+  .memories-cover-art { display: none; }
   .memories-main > .memories-section { padding-top: 54px; }
   .stories-cover { margin-top: 17px; padding: 31px 22px; border-radius: 21px; }
   .stories-title { margin: 20px 0 15px; font-size: clamp(40px, 11vw, 56px); letter-spacing: -1.7px; }
@@ -771,6 +764,7 @@ html[data-theme="dark"] ::selection { background: #744f9b; color: #fff; }
   .brand-copy strong { font-size: 11px; letter-spacing: 1px; }
   .brand-copy small { font-size: 7px; letter-spacing: 1px; }
   .header-nav-link { font-size: 10px; }
+  .memories-cover-title { font-size: clamp(34px, 10vw, 38px); letter-spacing: -1.5px; }
   .count-card { padding: 11px; }
   .count-value { font-size: clamp(27px, 9vw, 35px); }
   .wish-bottom { align-items: stretch; }

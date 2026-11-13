@@ -30,6 +30,20 @@ export async function currentUser() {
   return sessionData.session?.user ?? null;
 }
 
+export function memorySchemaHint(error) {
+  const detail = String(error?.message || error);
+  if (detail.includes("Could not find the table 'public.memories' in the schema cache")) {
+    return "В Supabase ещё нет таблицы воспоминаний. Выполни файл supabase/memories_access.sql и обнови страницу.";
+  }
+  if (
+    /story_(title|text)/i.test(detail)
+    && /(schema cache|column|does not exist)/i.test(detail)
+  ) {
+    return "В Supabase ещё не добавлены поля историй. Повторно выполни supabase/memories_access.sql в SQL Editor и обнови страницу.";
+  }
+  return null;
+}
+
 export async function isWishlistMember() {
   const { data, error } = await supabase.rpc("is_wishlist_member");
   if (error) throw error;

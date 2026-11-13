@@ -1,4 +1,4 @@
-import { currentUser, isWishlistMember, listMemoryStories, signOut } from "./pages-client.js";
+import { currentUser, isWishlistMember, listMemoryStories, memorySchemaHint, signOut } from "./pages-client.js?v=memory-stories";
 
 const list = document.querySelector("#story-list");
 
@@ -47,5 +47,6 @@ document.querySelector("#logout").addEventListener("click", async () => {
 });
 
 start().catch(error => {
-  list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+  const message = memorySchemaHint(error) || error.message;
+  list.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
 });
