@@ -452,7 +452,20 @@ h1 em { color: var(--lime); font-weight: 400; }
 .memory-card img { display: block; width: 100%; height: 100%; object-fit: cover; background: #e8eadd; pointer-events: none; }
 .memory-dialog { width: min(940px, calc(100vw - 28px)); }
 .memory-viewer { position: relative; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(290px, .85fr); max-height: min(90vh, 850px); overflow: auto; border: 1px solid #e3e4da; border-radius: 22px; background: var(--surface); box-shadow: 0 24px 80px #06150e45; }
-.memory-viewer-photo { position: sticky; top: 0; align-self: center; width: 100%; height: auto; max-height: min(90vh, 850px); min-height: 0; object-fit: contain; background: #15241d; }
+.memory-photo-stage { position: sticky; top: 0; display: grid; min-width: 0; height: min(90vh, 850px); align-self: start; place-items: center; overflow: hidden; background: #15241d; }
+.memory-viewer-photo { display: block; width: 100%; height: 100%; max-height: min(90vh, 850px); min-height: 0; object-fit: contain; background: #15241d; }
+.memory-photo-arrow { position: absolute; z-index: 2; top: 50%; display: grid; width: 46px; height: 46px; padding: 0; place-items: center; border: 1px solid #ffffff80; border-radius: 50%; background: #17141db8; color: #fff; box-shadow: 0 4px 18px #0005; transform: translateY(-50%); transition: background .2s, transform .2s; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.memory-photo-arrow:hover { background: #7d58d9e8; }
+.memory-photo-arrow:active { transform: translateY(-50%) scale(.92); }
+.memory-photo-arrow .ui-icon { width: 23px; height: 23px; }
+.memory-photo-prev { left: 14px; }
+.memory-photo-next { right: 14px; }
+.memory-photo-count { position: absolute; z-index: 2; bottom: 14px; left: 50%; padding: 6px 12px; border: 1px solid #ffffff5c; border-radius: 999px; background: #17141db8; color: #fff; font-size: 12px; font-weight: 700; transform: translateX(-50%); }
+.memory-photo-arrow[hidden], .memory-photo-count[hidden] { display: none; }
+.memory-viewer-photo.is-transitioning-next { animation: memory-photo-next .26s cubic-bezier(.2,.7,.2,1); }
+.memory-viewer-photo.is-transitioning-previous { animation: memory-photo-previous .26s cubic-bezier(.2,.7,.2,1); }
+@keyframes memory-photo-next { from { opacity: .35; transform: translateX(26px) scale(.985); } to { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes memory-photo-previous { from { opacity: .35; transform: translateX(-26px) scale(.985); } to { opacity: 1; transform: translateX(0) scale(1); } }
 .memory-viewer-content { display: flex; flex-direction: column; padding: 35px 30px 28px; }
 .memory-viewer-content .eyebrow { margin: 0 32px 13px 0; }
 .memory-viewer-content label, .memory-upload-list label { margin: 13px 0 7px; color: var(--muted); font-size: 11px; font-weight: 750; }
@@ -727,7 +740,11 @@ html[data-theme="dark"] ::selection { background: #744f9b; color: #fff; }
   .memory-day-date { margin-top: -4px; font-size: 13px; }
   .memory-card { flex-basis: min(68%, 255px); margin-left: -178px; border-radius: 2px; padding: 9px 9px 11px; }
   .memory-viewer { grid-template-columns: 1fr; max-height: calc(100dvh - 24px - env(safe-area-inset-top)); }
-  .memory-viewer-photo { position: relative; height: auto; max-height: min(42dvh, 400px); min-height: 0; }
+  .memory-photo-stage { position: relative; height: min(42dvh, 400px); min-height: 240px; }
+  .memory-viewer-photo { height: 100%; max-height: 100%; }
+  .memory-photo-arrow { width: 42px; height: 42px; }
+  .memory-photo-prev { left: 9px; }
+  .memory-photo-next { right: 9px; }
   .memory-viewer-content { padding: 24px 22px; }
   .memory-upload-list { grid-template-columns: 1fr; }
   .memory-upload-item { grid-template-columns: 58px minmax(0, 1fr); gap: 9px; }
@@ -775,6 +792,10 @@ html[data-theme="dark"] ::selection { background: #744f9b; color: #fff; }
   .count-card { min-width: 0; }
   .count-value { overflow-wrap: anywhere; }
   .hero, .memories-cover, .stories-cover { overflow: clip; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-viewer-photo.is-transitioning-next,
+  .memory-viewer-photo.is-transitioning-previous { animation: none; }
 }
 
 @media (max-width: 380px) {

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createThumbnailDataUrl, dataUrlToBlob } from "./photo-utils.js";
 
 const config = window.WISHLIST_CONFIG;
 if (!config?.url || !config?.publishableKey) {
@@ -45,6 +46,12 @@ export function memorySchemaHint(error) {
     && /(schema cache|column|does not exist)/i.test(detail)
   ) {
     return "В Supabase ещё не добавлены поля историй. Повторно выполни supabase/memories_access.sql в SQL Editor и обнови страницу.";
+  }
+  if (
+    /thumbnail_path/i.test(detail)
+    && /(schema cache|column|does not exist)/i.test(detail)
+  ) {
+    return "В Supabase ещё не добавлена поддержка превью. Повторно выполни supabase/memories_access.sql в SQL Editor и обнови страницу.";
   }
   return null;
 }
@@ -103,11 +110,15 @@ export async function deleteRow(table, id) {
 export async function listMemories() {
   const rows = await selectRows(
     "memories",
-    "id,memory_date,photo_path,thought_her,thought_him,story_title,story_text,created_at",
+    "id,memory_date,photo_path,thumbnail_path,thought_her,thought_him,story_title,story_text,created_at",
     { order: "memory_date.desc,created_at.desc" },
   );
   return Promise.all(rows.map(async memory => {
-    return { ...memory, photo: await signedMemoryPhoto(memory.photo_path) };
+    const [photo, photoOriginal] = await Promise.all([
+      signedMemoryPhoto(memory.thumbnail_path || memory.photo_path),
+      signedMemoryPhoto(memory.photo_path),
+    ]);
+    return { ...memory, photo, photo_original: photoOriginal };
   }));
 }
 
@@ -175,7 +186,7 @@ export async function createStory(story) {
     throw new Error("Поддерживаются фотографии JPEG, PNG и WebP.");
   }
   if (file && file.size > 3 * 1024 * 1024) {
-    throw new Error("Фотография должна быть меньше 3 МБ.");
+    throw new Error("Фотография для истории должна быть меньше 3 МБ.");
   }
   const id = crypto.randomUUID().replaceAll("-", "");
   const extension = file
@@ -208,28 +219,44 @@ export async function createStory(story) {
   }
 }
 
-export async function uploadMemory(memoryDate, file) {
+export async function uploadMemory(memoryDate, file, thumbnailDataUrl) {
   if (!memoryDate) throw new Error("Укажите дату воспоминания.");
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
     throw new Error("Поддерживаются фотографии JPEG, PNG и WebP.");
   }
-  if (file.size > 3 * 1024 * 1024) {
-    throw new Error("Фотография должна быть меньше 3 МБ.");
+  if (file.size > 20 * 1024 * 1024) {
+    throw new Error("Размер фотографии не должен превышать 20 МБ.");
   }
+  const thumbnail = thumbnailDataUrl || await createThumbnailDataUrl(file);
+  const thumbnailBlob = dataUrlToBlob(thumbnail);
+  const thumbnailExtension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[thumbnailBlob.type];
   const id = crypto.randomUUID().replaceAll("-", "");
   const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[file.type];
   const photoPath = `${id}.${extension}`;
+  const thumbnailPath = `thumbnails/${id}.${thumbnailExtension}`;
   const { error: uploadError } = await supabase.storage
     .from("memories")
     .upload(photoPath, file, { contentType: file.type, upsert: false });
   if (uploadError) throw uploadError;
+  const { error: thumbnailError } = await supabase.storage
+    .from("memories")
+    .upload(thumbnailPath, thumbnailBlob, { contentType: thumbnailBlob.type, upsert: false });
+  if (thumbnailError) {
+    const { error: cleanupError } = await supabase.storage.from("memories").remove([photoPath]);
+    if (cleanupError) {
+      throw new Error(`${thumbnailError.message} Оригинал не удалось автоматически удалить: ${cleanupError.message}`);
+    }
+    throw thumbnailError;
+  }
   const { error: insertError } = await supabase.from("memories").insert({
     id,
     memory_date: memoryDate,
     photo_path: photoPath,
+    thumbnail_path: thumbnailPath,
   });
   if (insertError) {
-    const { error: cleanupError } = await supabase.storage.from("memories").remove([photoPath]);
+    const { error: cleanupError } = await supabase.storage
+      .from("memories").remove([photoPath, thumbnailPath]);
     if (cleanupError) {
       throw new Error(`${insertError.message} Файл не удалось автоматически очистить: ${cleanupError.message}`);
     }
@@ -238,7 +265,7 @@ export async function uploadMemory(memoryDate, file) {
 }
 
 export async function deleteMemory(id) {
-  const rows = await selectRows("memories", "id,photo_path", { id: `eq.${id}` });
+  const rows = await selectRows("memories", "id,photo_path,thumbnail_path", { id: `eq.${id}` });
   if (!rows.length) throw new Error("Воспоминание не найдено.");
   const storyReferences = await selectRows("stories", "id", {
     photo_path: `eq.${rows[0].photo_path}`,
@@ -246,9 +273,10 @@ export async function deleteMemory(id) {
   const { error: rowError } = await supabase.from("memories").delete().eq("id", id);
   if (rowError) throw rowError;
   if (storyReferences.length) return;
+  const paths = [rows[0].photo_path, rows[0].thumbnail_path].filter(Boolean);
   const { error: photoError } = await supabase.storage
     .from("memories")
-    .remove([rows[0].photo_path]);
+    .remove(paths);
   if (photoError) {
     throw new Error(`Воспоминание удалено, но фото не удалось очистить из хранилища: ${photoError.message}`);
   }

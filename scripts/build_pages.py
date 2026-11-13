@@ -85,17 +85,21 @@ def build_pages(
             )
         html_path.write_text(html, encoding="utf-8", newline="\n")
 
-    for script_name in ("pages-app.js", "pages-login.js", "pages-memories-app.js", "pages-stories-app.js"):
+    for script_name in (
+        "pages-app.js",
+        "pages-login.js",
+        "pages-client.js",
+        "pages-memories-app.js",
+        "pages-stories-app.js",
+        "memory-gallery.js",
+    ):
         script_path = output_dir / script_name
         script = script_path.read_text(encoding="utf-8")
-        script = script.replace(
-            '"./pages-client.js"',
-            f'"./pages-client.js?v={asset_version}"',
-        )
-        script = script.replace(
-            '"./stories-page.js"',
-            f'"./stories-page.js?v={asset_version}"',
-        )
+        for asset in ("pages-client.js", "stories-page.js", "memory-gallery.js", "photo-utils.js"):
+            script = script.replace(
+                f'"./{asset}"',
+                f'"./{asset}?v={asset_version}"',
+            )
         script_path.write_text(script, encoding="utf-8", newline="\n")
 
     config = json.dumps(

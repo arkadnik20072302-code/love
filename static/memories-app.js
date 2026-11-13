@@ -25,15 +25,14 @@ function readAsDataUrl(file) {
   });
 }
 
-async function uploadMemory(memoryDate, file, storyTitle, storyText) {
+async function uploadMemory(memoryDate, file, thumbnail) {
   const photo = await readAsDataUrl(file);
   await api("/api/memories", {
     method: "POST",
     body: JSON.stringify({
       memory_date: memoryDate,
       photo,
-      story_title: storyTitle,
-      story_text: storyText,
+      thumbnail,
     }),
   });
 }

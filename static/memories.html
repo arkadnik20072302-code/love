@@ -83,7 +83,16 @@
   <dialog class="modal memory-dialog" id="memory-dialog">
     <div class="memory-viewer">
       <button class="modal-close" type="button" data-close="memory-dialog" aria-label="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button>
-      <img class="memory-viewer-photo" id="memory-viewer-photo" alt="Фотография из воспоминания">
+      <div class="memory-photo-stage">
+        <button class="memory-photo-arrow memory-photo-prev" id="memory-prev" type="button" aria-label="Предыдущее фото" hidden>
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+        </button>
+        <img class="memory-viewer-photo" id="memory-viewer-photo" alt="Фотография из воспоминания">
+        <button class="memory-photo-arrow memory-photo-next" id="memory-next" type="button" aria-label="Следующее фото" hidden>
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+        </button>
+        <span class="memory-photo-count" id="memory-photo-count" aria-live="polite" hidden></span>
+      </div>
       <div class="memory-viewer-content">
         <div class="eyebrow"><span class="eyebrow-dot"></span> ВАШ МОМЕНТ</div>
         <label for="memory-date">Дата воспоминания</label>
@@ -106,7 +115,7 @@
       <button class="modal-close" type="button" data-close="memories-upload-dialog" aria-label="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button>
       <div class="eyebrow"><span class="eyebrow-dot"></span> ВАШИ ОБЩИЕ МОМЕНТЫ</div>
       <h2>Добавить фотографии</h2>
-      <p class="modal-description">Можно выбрать сразу несколько фото или целую папку. Для каждого снимка укажи дату — тогда альбом отсортируется правильно. Истории добавляются отдельно на странице «Истории».</p>
+      <p class="modal-description">Можно выбрать сразу несколько фото или целую папку. Для каждого снимка укажи дату — тогда альбом отсортируется правильно. Оригиналы — до 20 МБ; в альбоме используются лёгкие превью. Истории добавляются отдельно на странице «Истории».</p>
       <div class="memory-file-choices">
         <div class="memory-file-choice">
           <input class="memory-file-input" id="memory-files" type="file" accept="image/jpeg,image/png,image/webp" multiple>

@@ -1,6 +1,8 @@
+import { createThumbnailDataUrl } from "./photo-utils.js";
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function escapeHtml(value) {
@@ -19,19 +21,13 @@ function formatMemoryDate(value, options = {}) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function readAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("Не удалось прочитать фотографию."));
-    reader.readAsDataURL(file);
-  });
-}
-
 function memoryLoadError(error) {
   const detail = String(error.message || error);
   if (detail.includes("Could not find the table 'public.memories' in the schema cache")) {
     return "В Supabase ещё нет таблицы воспоминаний. Выполни файл supabase/memories_access.sql и обнови страницу.";
+  }
+  if (detail.includes("thumbnail_path") && /(schema cache|column|does not exist)/i.test(detail)) {
+    return "В Supabase ещё не добавлена поддержка превью. Выполни файл supabase/memories_access.sql и обнови страницу.";
   }
   return `Не удалось загрузить фотографии: ${detail}`;
 }
@@ -39,9 +35,26 @@ function memoryLoadError(error) {
 export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, deleteMemory }) {
   const memoryGrid = $("#memory-grid");
   const monthFilter = $("#memory-month-filter");
-  const state = { memories: [], memoryId: null, month: "all" };
+  const state = { memories: [], memoryId: null, dayMemories: [], dayIndex: 0, month: "all" };
   let toastTimer;
   let uploadFiles = [];
+  const thumbnailCache = new Map();
+  const imageObserver = "IntersectionObserver" in window
+    ? new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        const image = entry.target;
+        if (entry.isIntersecting) {
+          if (image.dataset.photoSrc && image.dataset.loadedPhotoSrc !== image.dataset.photoSrc) {
+            image.src = image.dataset.photoSrc;
+            image.dataset.loadedPhotoSrc = image.dataset.photoSrc;
+          }
+        } else if (image.hasAttribute("src")) {
+          image.removeAttribute("src");
+          delete image.dataset.loadedPhotoSrc;
+        }
+      });
+    }, { rootMargin: "160px" })
+    : null;
 
   function showToast(message) {
     const toast = $("#toast");
@@ -62,6 +75,17 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     else dialog.removeAttribute("open");
   }
 
+  function thumbnailFor(file) {
+    const key = uploadFileKey(file);
+    if (!thumbnailCache.has(key)) {
+      thumbnailCache.set(key, createThumbnailDataUrl(file).catch(error => {
+        thumbnailCache.delete(key);
+        throw error;
+      }));
+    }
+    return thumbnailCache.get(key);
+  }
+
   function renderMonthFilter() {
     const selected = state.month;
     const months = [...new Set(state.memories.map(memory => memory.memory_date.slice(0, 7)))];
@@ -74,6 +98,10 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
   }
 
   function renderMemories() {
+    if (imageObserver) {
+      $$("#memory-grid img").forEach(image => imageObserver.unobserve(image));
+      $$("#memories-cover-collage img").forEach(image => imageObserver.unobserve(image));
+    }
     const sorted = [...state.memories].sort((a, b) =>
       b.memory_date.localeCompare(a.memory_date) || b.created_at.localeCompare(a.created_at),
     );
@@ -90,7 +118,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
       ? [...byDate.entries()].map(([, memories]) => {
         const cards = memories.map(memory =>
           `<button class="memory-card" type="button" data-memory-id="${memory.id}" aria-label="Открыть фотографию, ${escapeHtml(formatMemoryDate(memory.memory_date))}">
-            <img src="${escapeHtml(memory.photo)}" alt="Фотография из воспоминания" loading="lazy">
+            <img data-photo-src="${escapeHtml(memory.photo)}" alt="Фотография из воспоминания" loading="lazy" decoding="async" fetchpriority="low">
           </button>`
         ).join("");
         return `<div class="memory-day-group">
@@ -104,13 +132,17 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
         stack.scrollLeft = Math.max(0, (stack.scrollWidth - stack.clientWidth) / 2);
       }
     });
+    $$(".memory-card img", memoryGrid).forEach(image => {
+      if (imageObserver) imageObserver.observe(image);
+      else image.src = image.dataset.photoSrc;
+    });
 
     const collage = $("#memories-cover-collage");
     if (collage) {
       collage.innerHTML = sorted.length
         ? sorted.slice(0, 3).map((memory, index) =>
           `<figure class="cover-photo-card cover-photo-card-${index}">
-            <img src="${escapeHtml(memory.photo)}" alt="Фотография из вашего альбома" loading="lazy">
+            <img data-photo-src="${escapeHtml(memory.photo)}" alt="Фотография из вашего альбома" loading="lazy" decoding="async" fetchpriority="low">
           </figure>`,
         ).join("")
         : `<div class="cover-empty-card">
@@ -118,6 +150,10 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
           <strong>И это только начало</strong>
           <small>ВАША ИСТОРИЯ · ГЛАВА 01</small>
         </div>`;
+      $$("#memories-cover-collage img").forEach(image => {
+        if (imageObserver) imageObserver.observe(image);
+        else image.src = image.dataset.photoSrc;
+      });
     }
   }
 
@@ -133,13 +169,50 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
   }
 
   function openMemory(memory) {
+    state.dayMemories = state.memories
+      .filter(item => item.memory_date === memory.memory_date)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    state.dayIndex = state.dayMemories.findIndex(item => item.id === memory.id);
+    showMemory(memory);
+    openDialog("memory-dialog");
+  }
+
+  function showMemory(memory, direction = "") {
     state.memoryId = memory.id;
-    $("#memory-viewer-photo").src = memory.photo;
+    const photo = $("#memory-viewer-photo");
+    photo.classList.remove("is-transitioning-next", "is-transitioning-previous");
+    if (direction) {
+      photo.addEventListener("load", () => {
+        if (state.memoryId === memory.id) {
+          photo.classList.add(`is-transitioning-${direction}`);
+        }
+      }, { once: true });
+      photo.addEventListener("animationend", () => {
+        photo.classList.remove("is-transitioning-next", "is-transitioning-previous");
+      }, { once: true });
+    }
+    photo.src = memory.photo_original || memory.photo;
     $("#memory-date").value = memory.memory_date;
     $("#thought-her").value = memory.thought_her || "";
     $("#thought-him").value = memory.thought_him || "";
     $("#memory-error").textContent = "";
-    openDialog("memory-dialog");
+    $("#memory-photo-count").textContent = `${state.dayIndex + 1} / ${state.dayMemories.length}`;
+    $("#memory-photo-count").hidden = state.dayMemories.length < 2;
+    $("#memory-prev").hidden = state.dayMemories.length < 2;
+    $("#memory-next").hidden = state.dayMemories.length < 2;
+  }
+
+  function navigateMemory(direction) {
+    if (state.dayMemories.length < 2) return;
+    state.dayIndex = (state.dayIndex + direction + state.dayMemories.length)
+      % state.dayMemories.length;
+    showMemory(state.dayMemories[state.dayIndex], direction > 0 ? "next" : "previous");
+  }
+
+  function thumbnailForDisplayedMemory() {
+    const photo = $("#memory-viewer-photo");
+    photo.removeAttribute("src");
+    photo.classList.remove("is-transitioning-next", "is-transitioning-previous");
   }
 
   function uploadFileKey(file) {
@@ -155,7 +228,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     ]));
   }
 
-  function renderUploadFiles(preservedValues = new Map()) {
+  async function renderUploadFiles(preservedValues = new Map()) {
     const list = $("#memory-upload-list");
     list.innerHTML = uploadFiles.map((file, index) => {
       const values = preservedValues.get(uploadFileKey(file)) || {};
@@ -169,15 +242,17 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
       </article>`;
     }).join("");
     $("#memory-upload-submit").disabled = uploadFiles.length === 0;
-    uploadFiles.forEach((file, index) => {
-      readAsDataUrl(file).then(preview => {
-        if (uploadFiles[index] !== file) return;
+    for (let index = 0; index < uploadFiles.length; index += 1) {
+      const file = uploadFiles[index];
+      try {
+        const preview = await thumbnailFor(file);
+        if (uploadFiles[index] !== file) continue;
         const image = $(`img[data-preview-index="${index}"]`, list);
         if (image) image.src = preview;
-      }).catch(error => {
+      } catch (error) {
         $("#memory-upload-error").textContent = error.message;
-      });
-    });
+      }
+    }
   }
 
   memoryGrid.addEventListener("click", event => {
@@ -193,6 +268,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
 
   $("#memory-add-open").addEventListener("click", () => {
     uploadFiles = [];
+    thumbnailCache.clear();
     $("#memory-files").value = "";
     $("#memory-folder").value = "";
     $("#memory-upload-list").replaceChildren();
@@ -222,7 +298,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     }
     const messages = [];
     if (unsupported) messages.push(`${unsupported} неподдерживаемых файлов пропущено (нужны JPEG, PNG или WebP).`);
-    if (oversized) messages.push(`${oversized} файлов больше 3 МБ пропущено.`);
+    if (oversized) messages.push(`${oversized} файлов больше 20 МБ пропущено.`);
     if (duplicates) messages.push(`${duplicates} повторных файлов пропущено.`);
     $("#memory-upload-error").textContent = messages.join(" ");
     renderUploadFiles(preservedValues);
@@ -259,8 +335,9 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
       const file = uploadFiles[index];
       submit.textContent = `Загружаю ${index + 1} из ${uploadFiles.length}…`;
       try {
-        await uploadMemory(values[index].date, file);
+        await uploadMemory(values[index].date, file, await thumbnailFor(file));
         uploaded += 1;
+        thumbnailCache.delete(uploadFileKey(file));
       } catch (error) {
         errors.push(`${file.name}: ${error.message}`);
         failedFiles.push(file);
@@ -336,6 +413,19 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
 
   $$("[data-close]").forEach(button => button.addEventListener("click", () =>
     closeDialog($(`#${button.dataset.close}`))));
+  $("#memory-dialog").addEventListener("close", thumbnailForDisplayedMemory);
+  $("#memory-prev").addEventListener("click", () => navigateMemory(-1));
+  $("#memory-next").addEventListener("click", () => navigateMemory(1));
+  $("#memory-dialog").addEventListener("keydown", event => {
+    if (event.target.matches("input, textarea, select, [contenteditable='true']")) return;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      navigateMemory(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      navigateMemory(1);
+    }
+  });
   $$(".modal").forEach(dialog => dialog.addEventListener("click", event => {
     if (event.target === dialog) closeDialog(dialog);
   }));

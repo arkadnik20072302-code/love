@@ -101,6 +101,29 @@ class MemoriesApiTests(unittest.TestCase):
             ["Самый тёплый день", "Ещё один кадр"],
         )
 
+    def test_large_memory_keeps_a_small_list_preview_and_serves_original_on_demand(self):
+        image_bytes = b"x" * (4 * 1024 * 1024)
+        photo = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
+        thumbnail = "data:image/webp;base64," + base64.b64encode(b"small preview").decode("ascii")
+        _, created = self.request("POST", "/api/memories", {
+            "memory_date": "2025-03-04",
+            "photo": photo,
+            "thumbnail": thumbnail,
+        })
+        memory_id = created["memory"]["id"]
+
+        _, result = self.request("GET", "/api/memories")
+        memory = result["memories"][0]
+        self.assertEqual(memory["photo"], thumbnail)
+        self.assertEqual(memory["photo_original"], f"/api/memories/{memory_id}/photo")
+        self.assertLess(len(json.dumps(result)), 1000)
+
+        with urllib.request.urlopen(
+            f"{self.base_url}/api/memories/{memory_id}/photo"
+        ) as response:
+            self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+            self.assertEqual(response.read(), image_bytes)
+
     def test_create_stories_with_optional_photo_and_sort_by_date(self):
         photo = "data:image/jpeg;base64," + base64.b64encode(b"photo").decode("ascii")
         _, older = self.request("POST", "/api/stories", {
