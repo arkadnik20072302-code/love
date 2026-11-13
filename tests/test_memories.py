@@ -97,9 +97,78 @@ class MemoriesApiTests(unittest.TestCase):
         self.assertEqual(result["memories"][0]["id"], older["memory"]["id"])
         _, stories = self.request("GET", "/api/stories")
         self.assertEqual(
-            [story["story_title"] for story in stories["stories"]],
+            [story["title"] for story in stories["stories"]],
             ["Самый тёплый день", "Ещё один кадр"],
         )
+
+    def test_create_stories_with_optional_photo_and_sort_by_date(self):
+        photo = "data:image/jpeg;base64," + base64.b64encode(b"photo").decode("ascii")
+        _, older = self.request("POST", "/api/stories", {
+            "date": "2024-01-02",
+            "title": "Вечерняя прогулка",
+            "story_text": "Долго гуляли и разговаривали.",
+        })
+        _, newer = self.request("POST", "/api/stories", {
+            "date": "2025-03-04",
+            "title": "Первый снег",
+            "story_text": "Вышли гулять сразу после снегопада.",
+            "photo": photo,
+        })
+
+        self.assertEqual(older["story"]["photo"], "")
+        self.assertEqual(newer["story"]["photo"], photo)
+        _, result = self.request("GET", "/api/stories")
+        self.assertEqual(
+            [story["title"] for story in result["stories"]],
+            ["Первый снег", "Вечерняя прогулка"],
+        )
+        self.assertEqual(result["stories"][0]["photo"], photo)
+
+    def test_legacy_photo_stories_migrate_to_independent_stories(self):
+        memory_id = "a" * 32
+        photo = "data:image/jpeg;base64," + base64.b64encode(b"photo").decode("ascii")
+        with app.database() as db:
+            db.execute(
+                "INSERT INTO memories "
+                "(id, memory_date, image_data, thought_her, thought_him, story_title, story_text, created_at) "
+                "VALUES (?, ?, ?, '', '', ?, ?, ?)",
+                (
+                    memory_id,
+                    "2024-01-02",
+                    photo,
+                    "Старый заголовок",
+                    "Старый рассказ",
+                    "2024-01-02T00:00:00+00:00",
+                ),
+            )
+
+        app.initialize_db()
+        _, result = self.request("GET", "/api/stories")
+        self.assertEqual(len(result["stories"]), 1)
+        self.assertEqual(result["stories"][0]["title"], "Старый заголовок")
+
+        self.request("DELETE", f"/api/memories/{memory_id}")
+        _, result = self.request("GET", "/api/stories")
+        self.assertEqual(len(result["stories"]), 1)
+        self.assertEqual(result["stories"][0]["story_text"], "Старый рассказ")
+
+    def test_story_requires_title_text_and_valid_date(self):
+        payload = {
+            "date": "2024-01-02",
+            "title": "История",
+            "story_text": "Рассказ",
+        }
+        for changes in (
+            {"date": ""},
+            {"title": " "},
+            {"story_text": ""},
+            {"title": "x" * 121},
+            {"story_text": "x" * 8001},
+        ):
+            with self.subTest(changes=changes):
+                with self.assertRaises(urllib.error.HTTPError) as context:
+                    self.request("POST", "/api/stories", {**payload, **changes})
+                self.assertEqual(context.exception.code, 400)
 
     def test_create_requires_date_and_photo(self):
         with self.assertRaises(urllib.error.HTTPError) as context:

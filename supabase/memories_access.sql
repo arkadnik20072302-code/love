@@ -19,6 +19,30 @@ alter table public.memories
 create index if not exists memories_memory_date_created_at_idx
   on public.memories (memory_date desc, created_at desc);
 
+create table if not exists public.stories (
+  id text primary key,
+  story_date date not null,
+  title text not null check (char_length(title) between 1 and 120),
+  story_text text not null check (char_length(story_text) between 1 and 8000),
+  photo_path text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists stories_story_date_created_at_idx
+  on public.stories (story_date desc, created_at desc);
+
+insert into public.stories (id, story_date, title, story_text, photo_path, created_at)
+select
+  'legacy-' || id,
+  memory_date,
+  coalesce(nullif(trim(story_title), ''), 'История одного момента'),
+  coalesce(nullif(trim(story_text), ''), 'Эта фотография тоже хранит свою историю.'),
+  photo_path,
+  created_at
+from public.memories
+where trim(story_title) <> '' or trim(story_text) <> ''
+on conflict (id) do nothing;
+
 insert into storage.buckets (
   id,
   name,
@@ -39,8 +63,11 @@ set public = false,
     allowed_mime_types = excluded.allowed_mime_types;
 
 alter table public.memories enable row level security;
+alter table public.stories enable row level security;
 revoke all on public.memories from anon, authenticated;
+revoke all on public.stories from anon, authenticated;
 grant select, insert, update, delete on public.memories to authenticated;
+grant select, insert, update, delete on public.stories to authenticated;
 
 drop policy if exists wishlist_memories_member_access on public.memories;
 drop policy if exists wishlist_memories_member_gate on public.memories;
@@ -49,6 +76,17 @@ create policy wishlist_memories_member_access on public.memories
   using (true)
   with check (true);
 create policy wishlist_memories_member_gate on public.memories
+  as restrictive for all to authenticated
+  using (public.is_wishlist_member())
+  with check (public.is_wishlist_member());
+
+drop policy if exists wishlist_stories_member_access on public.stories;
+drop policy if exists wishlist_stories_member_gate on public.stories;
+create policy wishlist_stories_member_access on public.stories
+  for all to authenticated
+  using (true)
+  with check (true);
+create policy wishlist_stories_member_gate on public.stories
   as restrictive for all to authenticated
   using (public.is_wishlist_member())
   with check (public.is_wishlist_member());

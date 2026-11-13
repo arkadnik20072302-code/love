@@ -1,42 +1,43 @@
-const list = document.querySelector("#story-list");
+import { initStoriesPage } from "./stories-page.js";
 
-async function loadStories() {
-  const response = await fetch("/api/stories");
+async function requestStories(method = "GET", payload) {
+  const response = await fetch("/api/stories", {
+    method,
+    headers: payload ? { "Content-Type": "application/json" } : {},
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
   if (response.status === 401) {
     location.replace("/login");
     throw new Error("Сессия истекла. Войдите снова.");
   }
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Не удалось загрузить истории.");
-  return payload.stories;
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Не удалось загрузить истории.");
+  return result.stories || result.story;
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, character => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Не удалось прочитать фотографию."));
+    reader.readAsDataURL(file);
+  });
 }
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(`${value}T00:00:00`));
+async function listStories() {
+  return requestStories();
 }
 
-function renderStories(stories) {
-  list.innerHTML = stories.length
-    ? stories.map(story => `<article class="story-card">
-        <div class="story-card-date">${escapeHtml(formatDate(story.memory_date))}</div>
-        <h2>${escapeHtml(story.story_title || "История одного момента")}</h2>
-        <p>${escapeHtml(story.story_text || "Эта фотография тоже хранит свою историю.")}</p>
-      </article>`).join("")
-    : `<div class="empty-state">Истории появятся здесь, когда вы добавите их к фотографиям.</div>`;
+async function createStory(story) {
+  const photo = story.photo ? await readAsDataUrl(story.photo) : "";
+  return requestStories("POST", { ...story, photo });
 }
 
-loadStories().then(renderStories).catch(error => {
-  list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+initStoriesPage({ listStories, createStory }).catch(error => {
+  const message = document.createElement("div");
+  message.className = "empty-state";
+  message.textContent = error.message;
+  document.querySelector("#story-list").replaceChildren(message);
 });
 
 fetch("/health")

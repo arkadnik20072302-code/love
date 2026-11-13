@@ -92,6 +92,10 @@ def build_pages(
             '"./pages-client.js"',
             f'"./pages-client.js?v={asset_version}"',
         )
+        script = script.replace(
+            '"./stories-page.js"',
+            f'"./stories-page.js?v={asset_version}"',
+        )
         script_path.write_text(script, encoding="utf-8", newline="\n")
 
     config = json.dumps(

@@ -56,8 +56,10 @@ class PagesBuildTests(unittest.TestCase):
         )
         (self.source / "memory-gallery.js").write_text("shared gallery", encoding="utf-8")
         (self.source / "pages-stories-app.js").write_text(
-            'import "./pages-client.js";', encoding="utf-8"
+            'import "./pages-client.js"; import "./stories-page.js";',
+            encoding="utf-8",
         )
+        (self.source / "stories-page.js").write_text("story page", encoding="utf-8")
         (self.source / "theme.js").write_text("theme switch", encoding="utf-8")
 
     def tearDown(self):
@@ -95,6 +97,10 @@ class PagesBuildTests(unittest.TestCase):
             'import "./pages-client.js?v=test-version";',
             (self.output / "pages-memories-app.js").read_text(encoding="utf-8"),
         )
+        stories_app = (self.output / "pages-stories-app.js").read_text(encoding="utf-8")
+        self.assertIn('import "./pages-client.js?v=test-version";', stories_app)
+        self.assertIn('import "./stories-page.js?v=test-version";', stories_app)
+        self.assertTrue((self.output / "stories-page.js").exists())
         self.assertTrue((self.output / "memory-gallery.js").exists())
         self.assertTrue((self.output / "theme.js").exists())
         self.assertFalse((self.output / "app.js").exists())

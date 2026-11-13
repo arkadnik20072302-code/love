@@ -88,19 +88,22 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
 
     memoryGrid.innerHTML = byDate.size
       ? [...byDate.entries()].map(([, memories]) => {
-        const total = memories.length;
-        const cards = memories.map((memory, index) => {
-          const center = (total - 1) / 2;
-          const offset = (index - center) * Math.min(20, 92 / Math.max(total, 1));
-          const rotation = (index - center) * Math.min(8, 24 / Math.max(total, 1));
-          const title = memory.story_title || "Открыть фотографию";
-          return `<button class="memory-card" type="button" data-memory-id="${memory.id}" style="--card-offset:${offset}px;--card-rotation:${rotation}deg;--card-order:${index}" aria-label="${escapeHtml(title)}, ${escapeHtml(formatMemoryDate(memory.memory_date))}">
-            <img src="${escapeHtml(memory.photo)}" alt="${escapeHtml(title)}" loading="lazy">
-          </button>`;
-        }).join("");
-        return `<div class="memory-day-stack" role="group" aria-label="Фотографии одного дня">${cards}</div>`;
+        const cards = memories.map(memory =>
+          `<button class="memory-card" type="button" data-memory-id="${memory.id}" aria-label="Открыть фотографию, ${escapeHtml(formatMemoryDate(memory.memory_date))}">
+            <img src="${escapeHtml(memory.photo)}" alt="Фотография из воспоминания" loading="lazy">
+          </button>`
+        ).join("");
+        return `<div class="memory-day-group">
+          <div class="memory-day-stack${memories.length > 2 ? " is-overflowing" : ""}" role="group" aria-label="Фотографии одного дня">${cards}</div>
+          <div class="memory-day-date">${escapeHtml(formatMemoryDate(memories[0].memory_date))}</div>
+        </div>`;
       }).join("")
       : `<div class="empty-state">${state.memories.length ? "За этот месяц фотографий нет." : "Здесь будут ваши общие моменты."}</div>`;
+    $$(".memory-day-stack", memoryGrid).forEach(stack => {
+      if (stack.classList.contains("is-overflowing")) {
+        stack.scrollLeft = Math.max(0, (stack.scrollWidth - stack.clientWidth) / 2);
+      }
+    });
 
     const collage = $("#memories-cover-collage");
     if (collage) {
@@ -133,8 +136,6 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     state.memoryId = memory.id;
     $("#memory-viewer-photo").src = memory.photo;
     $("#memory-date").value = memory.memory_date;
-    $("#memory-story-title").value = memory.story_title || "";
-    $("#memory-story-text").value = memory.story_text || "";
     $("#thought-her").value = memory.thought_her || "";
     $("#thought-him").value = memory.thought_him || "";
     $("#memory-error").textContent = "";
@@ -150,8 +151,6 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
       uploadFileKey(uploadFiles[Number(item.dataset.uploadIndex)]),
       {
         date: $("#memory-upload-date", item).value,
-        title: $("#memory-upload-title", item).value,
-        story: $("#memory-upload-story", item).value,
       },
     ]));
   }
@@ -166,10 +165,6 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
           <strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong>
           <label for="memory-upload-date-${index}">Дата этого момента</label>
           <input id="memory-upload-date-${index}" class="memory-upload-date" type="date" value="${escapeHtml(values.date || "")}" required>
-          <label for="memory-upload-title-${index}">Название истории</label>
-          <input id="memory-upload-title-${index}" class="memory-upload-title" type="text" maxlength="120" value="${escapeHtml(values.title || "")}" placeholder="Например, наша поездка">
-          <label for="memory-upload-story-${index}">Что произошло?</label>
-          <textarea id="memory-upload-story-${index}" class="memory-upload-story" maxlength="8000" rows="2" placeholder="Коротко запиши историю этого фото…">${escapeHtml(values.story || "")}</textarea>
         </div>
       </article>`;
     }).join("");
@@ -246,8 +241,6 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     const items = $$(".memory-upload-item");
     const values = items.map(item => ({
       date: $(".memory-upload-date", item).value,
-      title: $(".memory-upload-title", item).value.trim(),
-      story: $(".memory-upload-story", item).value.trim(),
     }));
     const missingDate = values.some(item => !item.date);
     if (missingDate) {
@@ -266,7 +259,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
       const file = uploadFiles[index];
       submit.textContent = `Загружаю ${index + 1} из ${uploadFiles.length}…`;
       try {
-        await uploadMemory(values[index].date, file, values[index].title, values[index].story);
+        await uploadMemory(values[index].date, file);
         uploaded += 1;
       } catch (error) {
         errors.push(`${file.name}: ${error.message}`);
@@ -310,14 +303,12 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
     try {
       await updateMemory(memory.id, {
         memory_date: memoryDate,
-        story_title: $("#memory-story-title").value.trim(),
-        story_text: $("#memory-story-text").value.trim(),
         thought_her: $("#thought-her").value.trim(),
         thought_him: $("#thought-him").value.trim(),
       });
       await refresh();
       closeDialog($("#memory-dialog"));
-      showToast("История и мысли сохранены.");
+      showToast("Дата и мысли сохранены.");
     } catch (error) {
       $("#memory-error").textContent = error.message;
     } finally {
@@ -327,7 +318,7 @@ export function initMemoryGallery({ listMemories, uploadMemory, updateMemory, de
 
   $("#memory-delete").addEventListener("click", async () => {
     const memory = state.memories.find(item => item.id === state.memoryId);
-    if (!memory || !window.confirm("Удалить это фото вместе с его историей и мыслями?")) return;
+    if (!memory || !window.confirm("Удалить это фото и мысли к нему?")) return;
     const deleteButton = $("#memory-delete");
     deleteButton.disabled = true;
     try {

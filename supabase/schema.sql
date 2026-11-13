@@ -57,10 +57,35 @@ alter table public.memories
 create index if not exists memories_memory_date_created_at_idx
   on public.memories (memory_date desc, created_at desc);
 
+create table if not exists public.stories (
+  id text primary key,
+  story_date date not null,
+  title text not null check (char_length(title) between 1 and 120),
+  story_text text not null check (char_length(story_text) between 1 and 8000),
+  photo_path text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists stories_story_date_created_at_idx
+  on public.stories (story_date desc, created_at desc);
+
+insert into public.stories (id, story_date, title, story_text, photo_path, created_at)
+select
+  'legacy-' || id,
+  memory_date,
+  coalesce(nullif(trim(story_title), ''), 'История одного момента'),
+  coalesce(nullif(trim(story_text), ''), 'Эта фотография тоже хранит свою историю.'),
+  photo_path,
+  created_at
+from public.memories
+where trim(story_title) <> '' or trim(story_text) <> ''
+on conflict (id) do nothing;
+
 alter table public.settings enable row level security;
 alter table public.wishes enable row level security;
 alter table public.reminders enable row level security;
 alter table public.memories enable row level security;
+alter table public.stories enable row level security;
 
-revoke all on public.settings, public.wishes, public.reminders, public.memories from anon, authenticated;
-grant all on public.settings, public.wishes, public.reminders, public.memories to service_role;
+revoke all on public.settings, public.wishes, public.reminders, public.memories, public.stories from anon, authenticated;
+grant all on public.settings, public.wishes, public.reminders, public.memories, public.stories to service_role;

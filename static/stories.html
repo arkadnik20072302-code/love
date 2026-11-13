@@ -46,6 +46,10 @@
             <div class="eyebrow"><span class="eyebrow-dot"></span> ПО ДАТЕ — ОТ НОВЫХ К СТАРЫМ</div>
             <h2 id="stories-heading">Наша летопись</h2>
           </div>
+          <button class="add-button" id="story-add-open" type="button">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+            Добавить историю
+          </button>
         </div>
         <div class="story-list" id="story-list" aria-live="polite">
           <div class="empty-state">Загружаем ваши истории…</div>
@@ -54,6 +58,33 @@
     </main>
     <footer><span>НАШЕ ПОТОМ · СОХРАНЯЕМ САМОЕ ВАЖНОЕ</span><span>А + Д</span></footer>
   </div>
+  <dialog class="modal story-dialog" id="story-dialog">
+    <form class="modal-card story-form" id="story-form">
+      <button class="modal-close" type="button" data-close="story-dialog" aria-label="Закрыть">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+      </button>
+      <div class="eyebrow"><span class="eyebrow-dot"></span> СОХРАНИМ ЭТОТ МОМЕНТ</div>
+      <h2>Новая история</h2>
+      <label for="story-date">Дата истории</label>
+      <input id="story-date" name="date" type="date" required>
+      <label for="story-title">Название</label>
+      <input id="story-title" name="title" type="text" maxlength="120" placeholder="Например, наш первый отпуск" required>
+      <label for="story-text">Что произошло?</label>
+      <textarea id="story-text" name="story_text" maxlength="8000" rows="6" placeholder="Расскажи эту историю…" required></textarea>
+      <label for="story-photo">Фотография <span class="optional-label">необязательно</span></label>
+      <input class="memory-file-input" id="story-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+      <label class="memory-folder-picker story-photo-picker" for="story-photo">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="m21 15-5-5L5 20"></path></svg>
+        Прикрепить фото
+      </label>
+      <div class="story-photo-preview" id="story-photo-preview" hidden>
+        <img id="story-photo-image" alt="Предпросмотр прикреплённой фотографии">
+        <button class="memory-delete-button" id="story-photo-remove" type="button">Убрать фото</button>
+      </div>
+      <div class="form-error" id="story-error" role="alert"></div>
+      <button class="add-button modal-submit" id="story-save" type="submit">Сохранить историю</button>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

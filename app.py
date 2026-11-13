@@ -347,6 +347,14 @@ def initialize_db():
                 story_text TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS stories (
+                id TEXT PRIMARY KEY,
+                story_date TEXT NOT NULL,
+                title TEXT NOT NULL,
+                story_text TEXT NOT NULL,
+                image_data TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
             INSERT OR IGNORE INTO settings (id) VALUES (1);
             """
         )
@@ -364,6 +372,15 @@ def initialize_db():
             db.execute("ALTER TABLE memories ADD COLUMN story_title TEXT NOT NULL DEFAULT ''")
         if "story_text" not in memory_columns:
             db.execute("ALTER TABLE memories ADD COLUMN story_text TEXT NOT NULL DEFAULT ''")
+        db.execute(
+            "INSERT OR IGNORE INTO stories "
+            "(id, story_date, title, story_text, image_data, created_at) "
+            "SELECT 'legacy-' || id, memory_date, "
+            "COALESCE(NULLIF(trim(story_title), ''), 'История одного момента'), "
+            "COALESCE(NULLIF(trim(story_text), ''), 'Эта фотография тоже хранит свою историю.'), "
+            "image_data, created_at FROM memories "
+            "WHERE trim(story_title) <> '' OR trim(story_text) <> ''"
+        )
         if db.execute("SELECT COUNT(*) FROM wishes").fetchone()[0] == 0:
             today = datetime.date.today().isoformat()
             starter_wishes = [
@@ -470,17 +487,160 @@ def get_memory_stories():
     if using_supabase():
         return supabase_request(
             "GET",
-            "memories?select=id,memory_date,story_title,story_text"
+            "memories?select=id,memory_date,photo_path,story_title,story_text,created_at"
             "&or=(story_title.neq.,story_text.neq.)"
             "&order=memory_date.desc,created_at.desc",
         )
     with DB_LOCK, database() as db:
         rows = db.execute(
-            "SELECT id, memory_date, story_title, story_text FROM memories "
+            "SELECT id, memory_date, image_data, story_title, story_text, created_at FROM memories "
             "WHERE trim(story_title) <> '' OR trim(story_text) <> '' "
             "ORDER BY memory_date DESC, created_at DESC"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_stories():
+    if using_supabase():
+        rows = supabase_request(
+            "GET",
+            "stories?select=id,story_date,title,story_text,photo_path,created_at"
+            "&order=story_date.desc,created_at.desc",
+        )
+        stories = [
+            {
+                "id": row["id"],
+                "story_date": row["story_date"],
+                "date": row["story_date"],
+                "title": row["title"],
+                "story_text": row["story_text"],
+                "photo": supabase_memory_photo_url(row["photo_path"])
+                if row.get("photo_path")
+                else "",
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    else:
+        with DB_LOCK, database() as db:
+            rows = db.execute(
+                "SELECT id, story_date, title, story_text, image_data, created_at "
+                "FROM stories ORDER BY story_date DESC, created_at DESC"
+            ).fetchall()
+        stories = [
+            {
+                "id": row["id"],
+                "story_date": row["story_date"],
+                "date": row["story_date"],
+                "title": row["title"],
+                "story_text": row["story_text"],
+                "photo": row["image_data"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    story_ids = {story["id"] for story in stories}
+    for row in get_memory_stories():
+        legacy_id = f"legacy-{row['id']}"
+        if legacy_id in story_ids:
+            continue
+        stories.append({
+            "id": legacy_id,
+            "story_date": row["memory_date"],
+            "date": row["memory_date"],
+            "title": row["story_title"] or "История одного момента",
+            "story_text": row["story_text"],
+            "photo": (
+                supabase_memory_photo_url(row["photo_path"])
+                if using_supabase()
+                else row["image_data"]
+            ),
+            "created_at": row["created_at"],
+        })
+        story_ids.add(legacy_id)
+    stories.sort(
+        key=lambda story: (story["date"], story.get("created_at", "")),
+        reverse=True,
+    )
+    return stories
+
+
+def create_story(story_date, title, story_text, photo=""):
+    story_date = parse_date(story_date, "Дата истории")
+    if not story_date:
+        raise ValueError("Укажите дату истории.")
+    title = validate_memory_story(title, "Название истории", 120)
+    if not title:
+        raise ValueError("Укажите название истории.")
+    story_text = validate_memory_story(story_text, "История", 8000)
+    if not story_text:
+        raise ValueError("Напишите текст истории.")
+    photo = validate_photo(photo)
+    story_id = uuid.uuid4().hex
+    created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    if using_supabase():
+        photo_path = None
+        if photo:
+            match = PHOTO_PATTERN.fullmatch(photo)
+            mime_type = match.group(1)
+            extension = {"jpeg": "jpg", "png": "png", "webp": "webp"}[mime_type]
+            photo_path = f"stories/{story_id}.{extension}"
+            image_bytes = base64.b64decode(match.group(2), validate=True)
+            supabase_storage_request(
+                "POST",
+                f"object/memories/{urllib.parse.quote(photo_path, safe='/')}",
+                image_bytes,
+                f"image/{mime_type}",
+            )
+        try:
+            rows = supabase_request(
+                "POST",
+                "stories",
+                {
+                    "id": story_id,
+                    "story_date": story_date,
+                    "title": title,
+                    "story_text": story_text,
+                    "photo_path": photo_path,
+                },
+                prefer="return=representation",
+            )
+        except SupabaseError:
+            if photo_path:
+                try:
+                    supabase_storage_request(
+                        "DELETE",
+                        "object/memories",
+                        {"prefixes": [photo_path]},
+                    )
+                except SupabaseError as cleanup_error:
+                    print(f"Не удалось удалить несвязанное фото истории: {cleanup_error}")
+            raise
+        if not rows:
+            raise SupabaseError("Supabase не подтвердил сохранение истории.")
+        return {
+            **rows[0],
+            "date": story_date,
+            "photo": supabase_memory_photo_url(photo_path) if photo_path else "",
+        }
+
+    with DB_LOCK, database() as db:
+        db.execute(
+            "INSERT INTO stories (id, story_date, title, story_text, image_data, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (story_id, story_date, title, story_text, photo, created_at),
+        )
+    return {
+        "id": story_id,
+        "story_date": story_date,
+        "date": story_date,
+        "title": title,
+        "story_text": story_text,
+        "photo": photo,
+        "created_at": created_at,
+    }
 
 
 def create_memory(memory_date, photo, story_title="", story_text=""):
@@ -627,6 +787,12 @@ def delete_memory(memory_id):
         )
         if not existing:
             return False
+        photo_path = existing[0]["photo_path"]
+        story_references = supabase_request(
+            "GET",
+            "stories?select=id&photo_path=eq."
+            f"{urllib.parse.quote(photo_path, safe='')}",
+        )
         rows = supabase_request(
             "DELETE",
             f"memories?id=eq.{memory_id}",
@@ -634,11 +800,13 @@ def delete_memory(memory_id):
         )
         if not rows:
             return False
+        if story_references:
+            return True
         try:
             supabase_storage_request(
                 "DELETE",
                 "object/memories",
-                {"prefixes": [existing[0]["photo_path"]]},
+                {"prefixes": [photo_path]},
             )
         except SupabaseError as exc:
             raise SupabaseError(
@@ -1435,7 +1603,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             try:
-                self.send_json(200, {"stories": get_memory_stories()})
+                self.send_json(200, {"stories": get_stories()})
             except (sqlite3.Error, SupabaseError) as exc:
                 print(f"Не удалось загрузить истории: {exc}")
                 self.send_json(502, {"error": str(exc)})
@@ -1458,6 +1626,7 @@ class Handler(BaseHTTPRequestHandler):
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/memories-app.js": ("memories-app.js", "text/javascript; charset=utf-8"),
             "/stories-app.js": ("stories-app.js", "text/javascript; charset=utf-8"),
+            "/stories-page.js": ("stories-page.js", "text/javascript; charset=utf-8"),
             "/pages-stories-app.js": ("pages-stories-app.js", "text/javascript; charset=utf-8"),
             "/memory-gallery.js": ("memory-gallery.js", "text/javascript; charset=utf-8"),
             "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
@@ -1491,7 +1660,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.require_auth():
             return
-        if path not in ("/api/wishes", "/api/memories"):
+        if path not in ("/api/wishes", "/api/memories", "/api/stories"):
             self.send_json(404, {"error": "Страница не найдена."})
             return
         try:
@@ -1504,6 +1673,15 @@ class Handler(BaseHTTPRequestHandler):
                     payload.get("story_text", ""),
                 )
                 self.send_json(201, {"memory": memory})
+                return
+            if path == "/api/stories":
+                story = create_story(
+                    payload.get("date"),
+                    payload.get("title"),
+                    payload.get("story_text"),
+                    payload.get("photo", ""),
+                )
+                self.send_json(201, {"story": story})
                 return
             wish = create_wish(payload.get("title"), payload.get("category", "Разное"))
             self.send_json(201, {"wish": wish})
