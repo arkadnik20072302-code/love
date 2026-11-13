@@ -1,4 +1,4 @@
-import { currentUser, isWishlistMember, listMemoryStories, memorySchemaHint, signOut } from "./pages-client.js?v=memory-stories";
+import { currentUser, isWishlistMember, listMemoryStories, memorySchemaHint, signOut } from "./pages-client.js";
 
 const list = document.querySelector("#story-list");
 

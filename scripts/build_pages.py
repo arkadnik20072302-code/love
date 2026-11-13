@@ -31,6 +31,7 @@ def build_pages(
     if not is_publishable_key(publishable_key):
         raise ValueError("A publishable Supabase key is required; secret keys are not allowed.")
 
+    asset_version = os.environ.get("GITHUB_SHA", "dev").strip()[:12] or "dev"
     source_dir = Path(source_dir)
     output_dir = Path(output_dir)
     if output_dir.exists():
@@ -48,19 +49,19 @@ def build_pages(
     page_scripts = {
         "index.html": (
             '<script src="/app.js" defer></script>',
-            '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-app.js"></script>',
+            f'<script src="./pages-config.js?v={asset_version}"></script>\n  <script type="module" src="./pages-app.js?v={asset_version}"></script>',
         ),
         "login.html": (
             '<script src="/login.js" defer></script>',
-            '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-login.js"></script>',
+            f'<script src="./pages-config.js?v={asset_version}"></script>\n  <script type="module" src="./pages-login.js?v={asset_version}"></script>',
         ),
         "memories.html": (
             '<script type="module" src="./memories-app.js"></script>',
-            '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-memories-app.js"></script>',
+            f'<script src="./pages-config.js?v={asset_version}"></script>\n  <script type="module" src="./pages-memories-app.js?v={asset_version}"></script>',
         ),
         "stories.html": (
             '<script type="module" src="./stories-app.js"></script>',
-            '<script src="./pages-config.js"></script>\n  <script type="module" src="./pages-stories-app.js"></script>',
+            f'<script src="./pages-config.js?v={asset_version}"></script>\n  <script type="module" src="./pages-stories-app.js?v={asset_version}"></script>',
         ),
     }
     asset_replacements = {
@@ -77,7 +78,21 @@ def build_pages(
         html = html.replace(old_script, new_script)
         for old, new in asset_replacements.items():
             html = html.replace(old, new)
+        for asset in ("style.css", "login.css", "theme.js", "photo1.jpg"):
+            html = html.replace(
+                f'"./{asset}"',
+                f'"./{asset}?v={asset_version}"',
+            )
         html_path.write_text(html, encoding="utf-8", newline="\n")
+
+    for script_name in ("pages-app.js", "pages-login.js", "pages-memories-app.js", "pages-stories-app.js"):
+        script_path = output_dir / script_name
+        script = script_path.read_text(encoding="utf-8")
+        script = script.replace(
+            '"./pages-client.js"',
+            f'"./pages-client.js?v={asset_version}"',
+        )
+        script_path.write_text(script, encoding="utf-8", newline="\n")
 
     config = json.dumps(
         {"url": supabase_url, "publishableKey": publishable_key},

@@ -1,4 +1,4 @@
-import { currentUser, isWishlistMember, signIn, signOut } from "./pages-client.js?v=memory-stories";
+import { currentUser, isWishlistMember, signIn, signOut } from "./pages-client.js";
 
 const form = document.querySelector("#login-form");
 const password = document.querySelector("#password");

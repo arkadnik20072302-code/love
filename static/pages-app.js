@@ -6,7 +6,7 @@ import {
   selectRows,
   signOut,
   updateRow,
-} from "./pages-client.js?v=memory-stories";
+} from "./pages-client.js";
 
 const state = {
   wishes: [],
