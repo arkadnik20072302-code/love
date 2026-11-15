@@ -1,7 +1,7 @@
 import { initStoriesPage } from "./stories-page.js";
 
-async function requestStories(method = "GET", payload) {
-  const response = await fetch("/api/stories", {
+async function requestStories(method = "GET", payload, storyId) {
+  const response = await fetch(storyId ? `/api/stories/${storyId}` : "/api/stories", {
     method,
     headers: payload ? { "Content-Type": "application/json" } : {},
     body: payload ? JSON.stringify(payload) : undefined,
@@ -33,7 +33,18 @@ async function createStory(story) {
   return requestStories("POST", { ...story, photo });
 }
 
-initStoriesPage({ listStories, createStory }).catch(error => {
+async function updateStory(storyId, story) {
+  const payload = {
+    date: story.date,
+    title: story.title,
+    story_text: story.story_text,
+    remove_photo: story.remove_photo,
+  };
+  if (story.photo) payload.photo = await readAsDataUrl(story.photo);
+  return requestStories("PUT", payload, storyId);
+}
+
+initStoriesPage({ listStories, createStory, updateStory }).catch(error => {
   const message = document.createElement("div");
   message.className = "empty-state";
   message.textContent = error.message;

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "static"
 OUTPUT_DIR = ROOT / "dist"
-EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js", "stories-app.js"}
+EXCLUDED_FILES = {"app.js", "login.js", "memories-app.js", "stories-app.js", "music-app.js"}
 
 
 def build_pages(
@@ -76,6 +76,14 @@ def build_pages(
         if html.count(old_script) != 1:
             raise ValueError(f"Expected exactly one local script tag in {html_name}.")
         html = html.replace(old_script, new_script)
+        if html_name != "login.html":
+            music_script = '<script type="module" src="./music-app.js"></script>'
+            pages_music_script = (
+                f'<script type="module" src="./pages-music-app.js?v={asset_version}"></script>'
+            )
+            if html.count(music_script) != 1:
+                raise ValueError(f"Expected exactly one music script tag in {html_name}.")
+            html = html.replace(music_script, pages_music_script)
         for old, new in asset_replacements.items():
             html = html.replace(old, new)
         for asset in ("style.css", "login.css", "theme.js", "photo1.jpg"):
@@ -91,11 +99,19 @@ def build_pages(
         "pages-client.js",
         "pages-memories-app.js",
         "pages-stories-app.js",
+        "pages-music-app.js",
+        "music-player.js",
         "memory-gallery.js",
     ):
         script_path = output_dir / script_name
         script = script_path.read_text(encoding="utf-8")
-        for asset in ("pages-client.js", "stories-page.js", "memory-gallery.js", "photo-utils.js"):
+        for asset in (
+            "pages-client.js",
+            "stories-page.js",
+            "memory-gallery.js",
+            "photo-utils.js",
+            "music-player.js",
+        ):
             script = script.replace(
                 f'"./{asset}"',
                 f'"./{asset}?v={asset_version}"',

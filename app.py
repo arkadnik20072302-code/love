@@ -359,6 +359,14 @@ def initialize_db():
                 image_data TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS music_tracks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                yandex_url TEXT NOT NULL,
+                track_id TEXT NOT NULL,
+                album_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
             INSERT OR IGNORE INTO settings (id) VALUES (1);
             """
         )
@@ -455,6 +463,104 @@ def validate_memory_story(value, field_name, limit):
     return value.strip()
 
 
+def parse_yandex_music_track(value):
+    if not isinstance(value, str) or not value.strip() or len(value) > 2048:
+        raise ValueError("Вставь ссылку на конкретный трек в Яндекс Музыке.")
+    try:
+        parsed = urllib.parse.urlparse(value.strip())
+    except ValueError as exc:
+        raise ValueError("Некорректная ссылка на Яндекс Музыку.") from exc
+    allowed_hosts = {
+        "music.yandex.ru",
+        "music.yandex.com",
+        "music.yandex.by",
+        "music.yandex.kz",
+        "music.yandex.uz",
+    }
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in allowed_hosts
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Поддерживаются только HTTPS-ссылки на music.yandex.ru.")
+    parts = [part for part in parsed.path.split("/") if part]
+    album_id = ""
+    track_id = ""
+    if len(parts) >= 4 and parts[0] == "album" and parts[2] == "track":
+        album_id, track_id = parts[1], parts[3]
+    elif len(parts) >= 2 and parts[0] == "track":
+        track_id = parts[1]
+    if not track_id.isdigit() or (album_id and not album_id.isdigit()):
+        raise ValueError("Ссылка должна вести на конкретный трек Яндекс Музыки.")
+    canonical_url = (
+        f"https://music.yandex.ru/album/{album_id}/track/{track_id}"
+        if album_id
+        else f"https://music.yandex.ru/track/{track_id}"
+    )
+    return track_id, album_id, canonical_url
+
+
+def get_music_tracks():
+    if using_supabase():
+        return supabase_request(
+            "GET",
+            "music_tracks?select=id,title,yandex_url,track_id,album_id,created_at"
+            "&order=created_at.asc,id.asc",
+        )
+    with DB_LOCK, database() as db:
+        rows = db.execute(
+            "SELECT id,title,yandex_url,track_id,album_id,created_at "
+            "FROM music_tracks ORDER BY created_at ASC,id ASC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_music_track(title, yandex_url):
+    track_id, album_id, canonical_url = parse_yandex_music_track(yandex_url)
+    if not isinstance(title, str) or len(title.strip()) > 120:
+        raise ValueError("Подпись к песне должна быть короче 120 символов.")
+    title = title.strip() or f"Трек {track_id}"
+    track = {
+        "id": uuid.uuid4().hex,
+        "title": title,
+        "yandex_url": canonical_url,
+        "track_id": track_id,
+        "album_id": album_id,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    if using_supabase():
+        rows = supabase_request(
+            "POST",
+            "music_tracks",
+            track,
+            prefer="return=representation",
+        )
+        if not rows:
+            raise SupabaseError("Supabase не подтвердил сохранение трека.")
+        return rows[0]
+    with DB_LOCK, database() as db:
+        db.execute(
+            "INSERT INTO music_tracks (id,title,yandex_url,track_id,album_id,created_at) "
+            "VALUES (:id,:title,:yandex_url,:track_id,:album_id,:created_at)",
+            track,
+        )
+    return track
+
+
+def delete_music_track(track_id):
+    if using_supabase():
+        rows = supabase_request(
+            "DELETE",
+            f"music_tracks?id=eq.{track_id}",
+            prefer="return=representation",
+        )
+        return bool(rows)
+    with DB_LOCK, database() as db:
+        result = db.execute("DELETE FROM music_tracks WHERE id = ?", (track_id,))
+        return result.rowcount > 0
+
+
 def get_memories():
     if using_supabase():
         rows = supabase_request(
@@ -523,6 +629,7 @@ def get_stories():
                 if row.get("photo_path")
                 else "",
                 "created_at": row["created_at"],
+                "editable": True,
             }
             for row in rows
         ]
@@ -541,6 +648,7 @@ def get_stories():
                 "story_text": row["story_text"],
                 "photo": row["image_data"],
                 "created_at": row["created_at"],
+                "editable": True,
             }
             for row in rows
         ]
@@ -562,6 +670,7 @@ def get_stories():
                 else row["image_data"]
             ),
             "created_at": row["created_at"],
+            "editable": True,
         })
         story_ids.add(legacy_id)
     stories.sort(
@@ -645,6 +754,211 @@ def create_story(story_date, title, story_text, photo=""):
         "story_text": story_text,
         "photo": photo,
         "created_at": created_at,
+    }
+
+
+def update_story(story_id, payload):
+    if not re.fullmatch(r"(?:legacy-)?[0-9a-f]{32}", story_id):
+        return None
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректные данные истории.")
+
+    remove_photo = payload.get("remove_photo", False)
+    if not isinstance(remove_photo, bool):
+        raise ValueError("Некорректное действие с фотографией.")
+    if "photo" in payload and remove_photo:
+        raise ValueError("Выберите замену фотографии или её удаление.")
+    photo = (
+        validate_photo(payload["photo"], MAX_STORY_PHOTO_BYTES)
+        if "photo" in payload
+        else ""
+    )
+
+    if using_supabase():
+        existing_rows = supabase_request(
+            "GET",
+            f"stories?select=id,story_date,title,story_text,photo_path&id=eq.{story_id}",
+        )
+        if not existing_rows and story_id.startswith("legacy-"):
+            memory_id = story_id.removeprefix("legacy-")
+            memory_rows = supabase_request(
+                "GET",
+                "memories?select=id,memory_date,photo_path,story_title,story_text,created_at"
+                f"&id=eq.{memory_id}",
+            )
+            if not memory_rows:
+                return None
+            memory = memory_rows[0]
+            existing_rows = supabase_request(
+                "POST",
+                "stories",
+                {
+                    "id": story_id,
+                    "story_date": memory["memory_date"],
+                    "title": memory.get("story_title") or "История одного момента",
+                    "story_text": memory.get("story_text")
+                    or "Эта фотография тоже хранит свою историю.",
+                    "photo_path": memory.get("photo_path"),
+                    "created_at": memory["created_at"],
+                },
+                prefer="return=representation",
+            )
+        if not existing_rows:
+            return None
+        existing = existing_rows[0]
+        old_photo_path = existing.get("photo_path")
+    else:
+        with DB_LOCK, database() as db:
+            existing = db.execute(
+                "SELECT id, story_date, title, story_text, image_data "
+                "FROM stories WHERE id = ?",
+                (story_id,),
+            ).fetchone()
+            if existing is None and story_id.startswith("legacy-"):
+                memory_id = story_id.removeprefix("legacy-")
+                memory = db.execute(
+                    "SELECT id, memory_date, image_data, story_title, story_text, created_at "
+                    "FROM memories WHERE id = ?",
+                    (memory_id,),
+                ).fetchone()
+                if memory is not None:
+                    db.execute(
+                        "INSERT OR IGNORE INTO stories "
+                        "(id, story_date, title, story_text, image_data, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            story_id,
+                            memory["memory_date"],
+                            memory["story_title"] or "История одного момента",
+                            memory["story_text"] or "Эта фотография тоже хранит свою историю.",
+                            memory["image_data"],
+                            memory["created_at"],
+                        ),
+                    )
+                    existing = db.execute(
+                        "SELECT id, story_date, title, story_text, image_data "
+                        "FROM stories WHERE id = ?",
+                        (story_id,),
+                    ).fetchone()
+        if existing is None:
+            return None
+        existing = dict(existing)
+        old_photo_path = ""
+
+    story_date = parse_date(payload.get("date", existing["story_date"]), "Дата истории")
+    if not story_date:
+        raise ValueError("Укажите дату истории.")
+    title = validate_memory_story(payload.get("title", existing["title"]), "Название истории", 120)
+    if not title:
+        raise ValueError("Укажите название истории.")
+    story_text = validate_memory_story(
+        payload.get("story_text", existing["story_text"]), "История", 8000
+    )
+    if not story_text:
+        raise ValueError("Напишите текст истории.")
+
+    if using_supabase():
+        changes = {
+            "story_date": story_date,
+            "title": title,
+            "story_text": story_text,
+        }
+        new_photo_path = None
+        if photo:
+            match = PHOTO_PATTERN.fullmatch(photo)
+            mime_type = match.group(1)
+            extension = {"jpeg": "jpg", "png": "png", "webp": "webp"}[mime_type]
+            new_photo_path = f"stories/{story_id}-{uuid.uuid4().hex}.{extension}"
+            image_bytes = base64.b64decode(match.group(2), validate=True)
+            supabase_storage_request(
+                "POST",
+                f"object/memories/{urllib.parse.quote(new_photo_path, safe='/')}",
+                image_bytes,
+                f"image/{mime_type}",
+            )
+            changes["photo_path"] = new_photo_path
+        elif remove_photo:
+            changes["photo_path"] = None
+
+        try:
+            rows = supabase_request(
+                "PATCH",
+                f"stories?id=eq.{story_id}",
+                changes,
+                prefer="return=representation",
+            )
+        except SupabaseError:
+            if new_photo_path:
+                try:
+                    supabase_storage_request(
+                        "DELETE",
+                        "object/memories",
+                        {"prefixes": [new_photo_path]},
+                    )
+                except SupabaseError as cleanup_error:
+                    print(f"Не удалось удалить несвязанное фото истории: {cleanup_error}")
+            raise
+        if not rows:
+            if new_photo_path:
+                try:
+                    supabase_storage_request(
+                        "DELETE",
+                        "object/memories",
+                        {"prefixes": [new_photo_path]},
+                    )
+                except SupabaseError as cleanup_error:
+                    print(f"Не удалось удалить несвязанное фото истории: {cleanup_error}")
+            return None
+        if (
+            old_photo_path
+            and not story_id.startswith("legacy-")
+            and (remove_photo or new_photo_path)
+        ):
+            try:
+                supabase_storage_request(
+                    "DELETE",
+                    "object/memories",
+                    {"prefixes": [old_photo_path]},
+                )
+            except SupabaseError as cleanup_error:
+                print(f"Не удалось удалить прежнее фото истории: {cleanup_error}")
+        return {
+            **rows[0],
+            "date": story_date,
+            "photo": supabase_memory_photo_url(rows[0]["photo_path"])
+            if rows[0].get("photo_path")
+            else "",
+            "editable": True,
+        }
+
+    image_data = (
+        photo
+        if photo
+        else "" if remove_photo
+        else existing["image_data"]
+    )
+    with DB_LOCK, database() as db:
+        result = db.execute(
+            "UPDATE stories SET story_date = ?, title = ?, story_text = ?, image_data = ? "
+            "WHERE id = ?",
+            (story_date, title, story_text, image_data, story_id),
+        )
+        if result.rowcount == 0:
+            return None
+        row = db.execute(
+            "SELECT id, story_date, title, story_text, image_data, created_at "
+            "FROM stories WHERE id = ?",
+            (story_id,),
+        ).fetchone()
+    return {
+        "id": row["id"],
+        "story_date": row["story_date"],
+        "date": row["story_date"],
+        "title": row["title"],
+        "story_text": row["story_text"],
+        "photo": row["image_data"],
+        "created_at": row["created_at"],
+        "editable": True,
     }
 
 
@@ -1498,7 +1812,7 @@ class Handler(BaseHTTPRequestHandler):
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; "
             f"img-src {image_sources}; connect-src 'self'; object-src 'none'; "
-            "base-uri 'none'; frame-ancestors 'none'",
+            "frame-src https://music.yandex.ru; base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()
         self.wfile.write(body)
@@ -1689,6 +2003,15 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"Не удалось загрузить истории: {exc}")
                 self.send_json(502, {"error": str(exc)})
             return
+        if path == "/api/music":
+            if not self.require_auth():
+                return
+            try:
+                self.send_json(200, {"tracks": get_music_tracks()})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось загрузить плейлист: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         if path == "/health":
             self.send_json(200, {
                 "ok": True,
@@ -1711,6 +2034,9 @@ class Handler(BaseHTTPRequestHandler):
             "/pages-stories-app.js": ("pages-stories-app.js", "text/javascript; charset=utf-8"),
             "/memory-gallery.js": ("memory-gallery.js", "text/javascript; charset=utf-8"),
             "/photo-utils.js": ("photo-utils.js", "text/javascript; charset=utf-8"),
+            "/music-player.js": ("music-player.js", "text/javascript; charset=utf-8"),
+            "/music-app.js": ("music-app.js", "text/javascript; charset=utf-8"),
+            "/pages-music-app.js": ("pages-music-app.js", "text/javascript; charset=utf-8"),
             "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
             "/photo1.jpg": ("photo1.jpg", "image/jpeg"),
@@ -1742,7 +2068,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.require_auth():
             return
-        if path not in ("/api/wishes", "/api/memories", "/api/stories"):
+        if path not in ("/api/wishes", "/api/memories", "/api/stories", "/api/music"):
             self.send_json(404, {"error": "Страница не найдена."})
             return
         try:
@@ -1768,6 +2094,10 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self.send_json(201, {"story": story})
                 return
+            if path == "/api/music":
+                track = create_music_track(payload.get("title", ""), payload.get("url"))
+                self.send_json(201, {"track": track})
+                return
             wish = create_wish(payload.get("title"), payload.get("category", "Разное"))
             self.send_json(201, {"wish": wish})
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -1780,6 +2110,20 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_auth():
             return
         path = urllib.parse.urlparse(self.path).path
+        story_match = re.fullmatch(r"/api/stories/((?:legacy-)?[0-9a-f]{32})", path)
+        if story_match:
+            try:
+                story = update_story(story_match.group(1), self.read_json())
+                if story is None:
+                    self.send_json(404, {"error": "История не найдена."})
+                    return
+                self.send_json(200, {"story": story})
+            except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self.send_json(400, {"error": str(exc) or "Некорректный запрос."})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось изменить историю: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         memory_match = re.fullmatch(r"/api/memories/([0-9a-f]{32})", path)
         if memory_match:
             try:
@@ -1942,6 +2286,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_auth():
             return
         path = urllib.parse.urlparse(self.path).path
+        music_match = re.fullmatch(r"/api/music/([0-9a-f]{32})", path)
+        if music_match:
+            try:
+                if not delete_music_track(music_match.group(1)):
+                    self.send_json(404, {"error": "Трек не найден."})
+                    return
+                self.send_json(200, {"ok": True})
+            except (sqlite3.Error, SupabaseError) as exc:
+                print(f"Не удалось удалить трек: {exc}")
+                self.send_json(502, {"error": str(exc)})
+            return
         memory_match = re.fullmatch(r"/api/memories/([0-9a-f]{32})", path)
         if memory_match:
             try:

@@ -5,6 +5,7 @@ import {
   listStories,
   memorySchemaHint,
   signOut,
+  updateStory,
 } from "./pages-client.js";
 import { initStoriesPage } from "./stories-page.js";
 
@@ -23,6 +24,7 @@ async function start() {
   await initStoriesPage({
     listStories,
     createStory,
+    updateStory,
     formatError: error => memorySchemaHint(error) || error.message,
   });
   document.querySelector("#logout").hidden = false;

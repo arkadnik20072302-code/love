@@ -9,6 +9,7 @@
   <script src="./theme.js" defer></script>
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./stories-app.js"></script>
+  <script type="module" src="./music-app.js"></script>
 </head>
 <body class="stories-page">
   <div class="page-shell stories-shell">
@@ -64,7 +65,7 @@
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
       </button>
       <div class="eyebrow"><span class="eyebrow-dot"></span> СОХРАНИМ ЭТОТ МОМЕНТ</div>
-      <h2>Новая история</h2>
+      <h2 id="story-form-heading">Новая история</h2>
       <label for="story-date">Дата истории</label>
       <input id="story-date" name="date" type="date" required>
       <label for="story-title">Название</label>

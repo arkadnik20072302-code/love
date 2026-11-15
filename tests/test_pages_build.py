@@ -19,6 +19,7 @@ class PagesBuildTests(unittest.TestCase):
             '<link rel="stylesheet" href="/style.css">'
             '<script src="/theme.js" defer></script>'
             '<script src="/app.js" defer></script>'
+            '<script type="module" src="./music-app.js"></script>'
             '<img src="/photo1.jpg">',
             encoding="utf-8",
         )
@@ -30,13 +31,15 @@ class PagesBuildTests(unittest.TestCase):
         (self.source / "memories.html").write_text(
             '<link rel="stylesheet" href="./style.css">'
             '<script src="./theme.js" defer></script>'
-            '<script type="module" src="./memories-app.js"></script>',
+            '<script type="module" src="./memories-app.js"></script>'
+            '<script type="module" src="./music-app.js"></script>',
             encoding="utf-8",
         )
         (self.source / "stories.html").write_text(
             '<link rel="stylesheet" href="./style.css">'
             '<script src="./theme.js" defer></script>'
-            '<script type="module" src="./stories-app.js"></script>',
+            '<script type="module" src="./stories-app.js"></script>'
+            '<script type="module" src="./music-app.js"></script>',
             encoding="utf-8",
         )
         (self.source / "app.js").write_text("local backend client", encoding="utf-8")
@@ -65,6 +68,13 @@ class PagesBuildTests(unittest.TestCase):
             'import "./pages-client.js"; import "./stories-page.js";',
             encoding="utf-8",
         )
+        (self.source / "pages-music-app.js").write_text(
+            'import "./pages-client.js"; import "./music-player.js";',
+            encoding="utf-8",
+        )
+        (self.source / "music-player.js").write_text(
+            'import "./pages-client.js";', encoding="utf-8"
+        )
         (self.source / "stories-page.js").write_text("story page", encoding="utf-8")
         (self.source / "theme.js").write_text("theme switch", encoding="utf-8")
 
@@ -88,9 +98,12 @@ class PagesBuildTests(unittest.TestCase):
         self.assertIn('src="./theme.js?v=test-version"', index)
         self.assertIn('src="./pages-config.js?v=test-version"', index)
         self.assertIn('src="./pages-app.js?v=test-version"', index)
+        self.assertIn('src="./pages-music-app.js?v=test-version"', index)
         self.assertIn('src="./pages-login.js?v=test-version"', login)
         self.assertIn('src="./pages-memories-app.js?v=test-version"', memories)
+        self.assertIn('src="./pages-music-app.js?v=test-version"', memories)
         self.assertIn('src="./pages-stories-app.js?v=test-version"', stories)
+        self.assertIn('src="./pages-music-app.js?v=test-version"', stories)
         self.assertIn(
             'href="./style.css?v=test-version"',
             memories,
@@ -118,14 +131,20 @@ class PagesBuildTests(unittest.TestCase):
         stories_app = (self.output / "pages-stories-app.js").read_text(encoding="utf-8")
         self.assertIn('import "./pages-client.js?v=test-version";', stories_app)
         self.assertIn('import "./stories-page.js?v=test-version";', stories_app)
+        music_app = (self.output / "pages-music-app.js").read_text(encoding="utf-8")
+        self.assertIn('import "./pages-client.js?v=test-version";', music_app)
+        self.assertIn('import "./music-player.js?v=test-version";', music_app)
         self.assertTrue((self.output / "stories-page.js").exists())
         self.assertTrue((self.output / "memory-gallery.js").exists())
+        self.assertTrue((self.output / "music-player.js").exists())
+        self.assertTrue((self.output / "pages-music-app.js").exists())
         self.assertTrue((self.output / "photo-utils.js").exists())
         self.assertTrue((self.output / "theme.js").exists())
         self.assertFalse((self.output / "app.js").exists())
         self.assertFalse((self.output / "login.js").exists())
         self.assertFalse((self.output / "memories-app.js").exists())
         self.assertFalse((self.output / "stories-app.js").exists())
+        self.assertFalse((self.output / "music-app.js").exists())
         self.assertEqual(
             (self.output / "photo1.jpg").read_bytes(),
             b"homepage photo fixture",

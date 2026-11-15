@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createThumbnailDataUrl, dataUrlToBlob } from "./photo-utils.js";
+import { parseYandexTrackUrl } from "./music-player.js";
 
 const config = window.WISHLIST_CONFIG;
 if (!config?.url || !config?.publishableKey) {
@@ -107,6 +108,31 @@ export async function deleteRow(table, id) {
   return data;
 }
 
+export async function listMusicTracks() {
+  return selectRows(
+    "music_tracks",
+    "id,title,yandex_url,track_id,album_id,created_at",
+    { order: "created_at.asc,id.asc" },
+  );
+}
+
+export async function createMusicTrack(track) {
+  const parsed = parseYandexTrackUrl(track.yandex_url);
+  const title = track.title.trim() || `Трек ${parsed.track_id}`;
+  if (title.length > 120) throw new Error("Подпись к песне должна быть короче 120 символов.");
+  return insertRow("music_tracks", {
+    id: crypto.randomUUID().replaceAll("-", ""),
+    title,
+    yandex_url: parsed.yandex_url,
+    track_id: parsed.track_id,
+    album_id: parsed.album_id,
+  });
+}
+
+export async function deleteMusicTrack(id) {
+  return deleteRow("music_tracks", id);
+}
+
 export async function listMemories() {
   const rows = await selectRows(
     "memories",
@@ -150,6 +176,7 @@ export async function listStories() {
     story_text: story.story_text,
     photo: story.photo_path ? await signedMemoryPhoto(story.photo_path) : "",
     created_at: story.created_at,
+    editable: true,
   })));
   const migratedMemoryIds = new Set(storyRows
     .filter(story => story.id.startsWith("legacy-"))
@@ -159,12 +186,13 @@ export async function listStories() {
       (memory.story_title || memory.story_text) && !migratedMemoryIds.has(memory.id)
     )
     .map(async memory => ({
-      id: memory.id,
+      id: `legacy-${memory.id}`,
       date: memory.memory_date,
       title: memory.story_title || "История одного момента",
       story_text: memory.story_text,
       photo: await signedMemoryPhoto(memory.photo_path),
       created_at: memory.created_at,
+      editable: true,
     })));
   return [...stories, ...legacyStories].sort((a, b) =>
     b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at),
@@ -217,6 +245,99 @@ export async function createStory(story) {
     }
     throw error;
   }
+}
+
+export async function updateStory(id, story) {
+  const title = story.title.trim();
+  const storyText = story.story_text.trim();
+  if (!story.date) throw new Error("Укажите дату истории.");
+  if (!title || title.length > 120) {
+    throw new Error("Название истории должно содержать от 1 до 120 символов.");
+  }
+  if (!storyText || storyText.length > 8000) {
+    throw new Error("Текст истории должен содержать от 1 до 8000 символов.");
+  }
+  if (story.photo && !["image/jpeg", "image/png", "image/webp"].includes(story.photo.type)) {
+    throw new Error("Поддерживаются фотографии JPEG, PNG и WebP.");
+  }
+  if (story.photo && story.photo.size > 3 * 1024 * 1024) {
+    throw new Error("Фотография для истории должна быть меньше 3 МБ.");
+  }
+  if (story.photo && story.remove_photo) {
+    throw new Error("Выберите замену фотографии или её удаление.");
+  }
+
+  let rows = await selectRows("stories", "photo_path", { id: `eq.${id}` });
+  if (!rows.length && id.startsWith("legacy-")) {
+    const memoryId = id.slice("legacy-".length);
+    const memoryRows = await selectRows(
+      "memories",
+      "id,memory_date,photo_path,story_title,story_text,created_at",
+      { id: `eq.${memoryId}` },
+    );
+    if (!memoryRows.length) throw new Error("История не найдена.");
+    const memory = memoryRows[0];
+    rows = [await insertRow("stories", {
+      id,
+      story_date: memory.memory_date,
+      title: memory.story_title || "История одного момента",
+      story_text: memory.story_text || "Эта фотография тоже хранит свою историю.",
+      photo_path: memory.photo_path,
+      created_at: memory.created_at,
+    }, "photo_path")];
+  }
+  if (!rows.length) throw new Error("История не найдена.");
+  const oldPhotoPath = rows[0].photo_path;
+  const changes = {
+    story_date: story.date,
+    title,
+    story_text: storyText,
+  };
+  let newPhotoPath = "";
+  if (story.photo) {
+    const extension = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    }[story.photo.type];
+    newPhotoPath = `stories/${id}-${crypto.randomUUID().replaceAll("-", "")}.${extension}`;
+    const { error: uploadError } = await supabase.storage
+      .from("memories")
+      .upload(newPhotoPath, story.photo, { contentType: story.photo.type, upsert: false });
+    if (uploadError) throw uploadError;
+    changes.photo_path = newPhotoPath;
+  } else if (story.remove_photo) {
+    changes.photo_path = null;
+  }
+
+  let updatedStory;
+  try {
+    updatedStory = await updateRow("stories", id, changes);
+  } catch (updateError) {
+    if (newPhotoPath) {
+      const { error: cleanupError } = await supabase.storage
+        .from("memories")
+        .remove([newPhotoPath]);
+      if (cleanupError) {
+        throw new Error(`${updateError.message} Новое фото не удалось автоматически удалить: ${cleanupError.message}`);
+      }
+    }
+    throw updateError;
+  }
+
+  if (
+    oldPhotoPath
+    && !id.startsWith("legacy-")
+    && (newPhotoPath || story.remove_photo)
+  ) {
+    const { error: cleanupError } = await supabase.storage
+      .from("memories")
+      .remove([oldPhotoPath]);
+    if (cleanupError) {
+      updatedStory.warning = `История сохранена, но прежнее фото не удалось удалить: ${cleanupError.message}`;
+    }
+  }
+  return updatedStory;
 }
 
 export async function uploadMemory(memoryDate, file, thumbnailDataUrl) {

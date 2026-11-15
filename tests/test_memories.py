@@ -147,6 +147,89 @@ class MemoriesApiTests(unittest.TestCase):
         )
         self.assertEqual(result["stories"][0]["photo"], photo)
 
+    def test_edit_story_text_and_replace_or_remove_photo(self):
+        first_photo = "data:image/jpeg;base64," + base64.b64encode(b"first").decode("ascii")
+        replacement_photo = "data:image/png;base64," + base64.b64encode(b"replacement").decode("ascii")
+        _, created = self.request("POST", "/api/stories", {
+            "date": "2024-01-02",
+            "title": "Старая подпись",
+            "story_text": "Старый рассказ",
+            "photo": first_photo,
+        })
+        story_id = created["story"]["id"]
+
+        _, edited = self.request("PUT", f"/api/stories/{story_id}", {
+            "date": "2024-02-03",
+            "title": "Новая подпись",
+            "story_text": "Обновлённый рассказ",
+        })
+        self.assertEqual(edited["story"]["date"], "2024-02-03")
+        self.assertEqual(edited["story"]["title"], "Новая подпись")
+        self.assertEqual(edited["story"]["story_text"], "Обновлённый рассказ")
+        self.assertEqual(edited["story"]["photo"], first_photo)
+
+        _, replaced = self.request("PUT", f"/api/stories/{story_id}", {
+            "date": "2024-02-03",
+            "title": "Новая подпись",
+            "story_text": "Обновлённый рассказ",
+            "photo": replacement_photo,
+        })
+        self.assertEqual(replaced["story"]["photo"], replacement_photo)
+
+        _, removed = self.request("PUT", f"/api/stories/{story_id}", {
+            "date": "2024-02-03",
+            "title": "Новая подпись",
+            "story_text": "Обновлённый рассказ",
+            "remove_photo": True,
+        })
+        self.assertEqual(removed["story"]["photo"], "")
+
+    def test_editing_legacy_story_does_not_change_linked_memory_photo(self):
+        memory_photo = "data:image/jpeg;base64," + base64.b64encode(b"memory").decode("ascii")
+        story_photo = "data:image/png;base64," + base64.b64encode(b"story").decode("ascii")
+        _, created = self.request("POST", "/api/memories", {
+            "memory_date": "2024-01-02",
+            "photo": memory_photo,
+            "story_title": "Фото-история",
+            "story_text": "Связанный рассказ",
+        })
+        app.initialize_db()
+        _, story_list = self.request("GET", "/api/stories")
+        story = next(item for item in story_list["stories"] if item["id"].startswith("legacy-"))
+
+        _, edited = self.request("PUT", f"/api/stories/{story['id']}", {
+            "date": "2024-01-03",
+            "title": "Изменённый рассказ",
+            "story_text": "Текст изменён отдельно от воспоминания.",
+            "photo": story_photo,
+        })
+        self.assertEqual(edited["story"]["photo"], story_photo)
+        with urllib.request.urlopen(
+            f"{self.base_url}/api/memories/{created['memory']['id']}/photo"
+        ) as response:
+            self.assertEqual(response.read(), b"memory")
+
+    def test_editing_unmigrated_memory_story_creates_story_record(self):
+        memory_photo = "data:image/jpeg;base64," + base64.b64encode(b"memory").decode("ascii")
+        _, created = self.request("POST", "/api/memories", {
+            "memory_date": "2024-01-02",
+            "photo": memory_photo,
+            "story_title": "Фото-история",
+            "story_text": "Связанный рассказ",
+        })
+        story_id = f"legacy-{created['memory']['id']}"
+
+        _, edited = self.request("PUT", f"/api/stories/{story_id}", {
+            "date": "2024-01-03",
+            "title": "Изменённый рассказ",
+            "story_text": "Текст изменён отдельно от воспоминания.",
+        })
+
+        self.assertEqual(edited["story"]["id"], story_id)
+        self.assertEqual(edited["story"]["title"], "Изменённый рассказ")
+        _, stories = self.request("GET", "/api/stories")
+        self.assertEqual(stories["stories"][0]["id"], story_id)
+
     def test_legacy_photo_stories_migrate_to_independent_stories(self):
         memory_id = "a" * 32
         photo = "data:image/jpeg;base64," + base64.b64encode(b"photo").decode("ascii")
