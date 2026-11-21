@@ -1,6 +1,14 @@
+@font-face {
+  font-family: "Allo";
+  src: url("./fonts/AlloVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: "Allo", "Segoe UI", Arial, sans-serif;
   color: #23382f;
   background: #f2f0e9;
 }

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Allo";
+  src: url("./fonts/AlloVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   --paper: #f2f0e9;
@@ -10,7 +18,7 @@
   --orange: #e8895e;
   --line: #dedfd5;
   --accent-glow: #d3ef7440;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Allo", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 html[data-theme="dark"] {
@@ -170,7 +178,7 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 h1, h2, p { margin-top: 0; }
 h1 {
   margin: 27px 0 18px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "Allo", Georgia, "Times New Roman", serif;
   font-size: clamp(46px, 5.3vw, 72px);
   font-weight: 400;
   line-height: .99;
@@ -295,7 +303,7 @@ h1 em { color: var(--lime); font-weight: 400; }
 .heart { position: absolute; top: 18px; left: 49px; color: #fff2cc; font-size: 15px; }
 .art-caption { position: absolute; right: 20px; bottom: 19px; z-index: 4; display: grid; gap: 3px; color: #f7e8d2; text-align: right; }
 .art-caption span { font-size: 8px; font-weight: 800; letter-spacing: 1.8px; }
-.art-caption strong { font-family: Georgia, "Times New Roman", serif; font-size: 20px; font-weight: 400; font-style: italic; }
+.art-caption strong { font-family: "Allo", Georgia, "Times New Roman", serif; font-size: 20px; font-weight: 400; font-style: italic; }
 .art-stamp {
   position: absolute;
   top: 57px;
@@ -362,7 +370,7 @@ h1 em { color: var(--lime); font-weight: 400; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .section-heading h2, .modal-card h2 {
   margin: 11px 0 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "Allo", Georgia, "Times New Roman", serif;
   font-size: clamp(35px, 4vw, 49px);
   font-weight: 400;
   letter-spacing: -1.7px;
@@ -419,7 +427,7 @@ h1 em { color: var(--lime); font-weight: 400; }
 .wish-action { display: grid; width: 29px; height: 29px; place-items: center; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #73796e; font-size: 17px; }
 .wish-action:hover { border-color: #dfe1d7; background: #eff0e9; color: var(--forest); }
 .wish-action .ui-icon { width: 16px; height: 16px; }
-.wish-title { position: relative; z-index: 1; max-width: 92%; margin: 21px 0 15px; font-family: Georgia, "Times New Roman", serif; font-size: 21px; font-weight: 400; line-height: 1.22; }
+.wish-title { position: relative; z-index: 1; max-width: 92%; margin: 21px 0 15px; font-family: "Allo", Georgia, "Times New Roman", serif; font-size: 21px; font-weight: 400; line-height: 1.22; }
 .is-done .wish-title { color: #788172; text-decoration: line-through; text-decoration-color: #94a17f; }
 .wish-photo { width: 100%; max-height: 150px; margin: 0 0 13px; border-radius: 10px; object-fit: cover; }
 .wish-bottom { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 11px; border-top: 1px solid #e9e9e1; }
@@ -509,7 +517,7 @@ h1 em { color: var(--lime); font-weight: 400; }
 .memories-cover::after { position: absolute; right: 0; bottom: 0; left: 0; height: 1px; background: linear-gradient(90deg, transparent, #d3ef7470, transparent); content: ""; }
 .memories-cover-copy { position: relative; z-index: 1; max-width: 520px; animation: cover-copy-in .8s .08s both; }
 .memories-cover-copy .eyebrow { color: #d0d9ca; }
-.memories-cover-title { margin: 29px 0 20px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(47px, 5.2vw, 72px); font-weight: 400; line-height: .99; letter-spacing: -3px; view-transition-name: memories-door; }
+.memories-cover-title { margin: 29px 0 20px; font-family: "Allo", Georgia, "Times New Roman", serif; font-size: clamp(47px, 5.2vw, 72px); font-weight: 400; line-height: .99; letter-spacing: -3px; view-transition-name: memories-door; }
 .memories-cover-title em { color: var(--lime); font-weight: 400; }
 .memories-cover-copy > p { max-width: 385px; margin-bottom: 0; color: #c1ccc1; font-size: 13px; line-height: 1.8; }
 .memories-cover-link { display: inline-flex; align-items: center; gap: 15px; margin-top: 30px; color: var(--lime); font-size: 11px; font-weight: 750; text-decoration: none; }
